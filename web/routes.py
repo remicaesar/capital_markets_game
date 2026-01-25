@@ -8,8 +8,12 @@ from typing import Optional
 from web.schemas import (
     NewGameRequest, ActionRequest, AdvanceRequest,
     SaveGameRequest, LoadGameRequest,
+    PlaceOrderRequest, CancelOrderRequest,
+    BuyOptionRequest, OptionActionRequest,
     NewGameResponse, StateResponse, ActionResponse, AdvanceResponse,
-    SavesListResponse, SaveGameResponse, LoadGameResponse, SaveInfo
+    SavesListResponse, SaveGameResponse, LoadGameResponse, SaveInfo,
+    PlaceOrderResponse, CancelOrderResponse,
+    BuyOptionResponse, OptionActionResponse, OptionChainResponse
 )
 from web.game_manager import game_manager
 
@@ -115,5 +119,123 @@ async def load_game(request: LoadGameRequest):
         success=True,
         message=f"Game loaded from slot '{request.slot}'",
         game_id=game_id,
+        state=state
+    )
+
+
+@router.post("/order", response_model=PlaceOrderResponse)
+async def place_order(request: PlaceOrderRequest):
+    """Place a limit order, stop loss, or take profit order"""
+    session = game_manager.get_session(request.game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, message, order = game_manager.place_order(
+        session,
+        request.order_type,
+        request.action,
+        request.company,
+        request.shares,
+        request.limit_price
+    )
+
+    state = game_manager.get_game_state(session)
+    return PlaceOrderResponse(
+        success=success,
+        message=message,
+        order=order if success else None,
+        state=state
+    )
+
+
+@router.post("/order/cancel", response_model=CancelOrderResponse)
+async def cancel_order(request: CancelOrderRequest):
+    """Cancel a pending order"""
+    session = game_manager.get_session(request.game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, message = game_manager.cancel_order(session, request.order_id)
+
+    state = game_manager.get_game_state(session)
+    return CancelOrderResponse(
+        success=success,
+        message=message,
+        state=state
+    )
+
+
+# =============================================================================
+# Options Trading Endpoints
+# =============================================================================
+
+@router.get("/options/chain", response_model=OptionChainResponse)
+async def get_option_chain(game_id: str, company: str):
+    """Get available options (calls and puts) for a company"""
+    session = game_manager.get_session(game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    chain = game_manager.get_option_chain(session, company)
+    if "error" in chain:
+        raise HTTPException(status_code=400, detail=chain["error"])
+
+    return OptionChainResponse(**chain)
+
+
+@router.post("/options/buy", response_model=BuyOptionResponse)
+async def buy_option(request: BuyOptionRequest):
+    """Buy a call or put option"""
+    session = game_manager.get_session(request.game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, message, option = game_manager.buy_option(
+        session,
+        request.company,
+        request.option_type,
+        request.strike_price,
+        request.contracts
+    )
+
+    state = game_manager.get_game_state(session)
+    return BuyOptionResponse(
+        success=success,
+        message=message,
+        option=option if success else None,
+        state=state
+    )
+
+
+@router.post("/options/exercise", response_model=OptionActionResponse)
+async def exercise_option(request: OptionActionRequest):
+    """Exercise an option"""
+    session = game_manager.get_session(request.game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, message = game_manager.exercise_option(session, request.option_id)
+
+    state = game_manager.get_game_state(session)
+    return OptionActionResponse(
+        success=success,
+        message=message,
+        state=state
+    )
+
+
+@router.post("/options/sell", response_model=OptionActionResponse)
+async def sell_option(request: OptionActionRequest):
+    """Sell an option back to market"""
+    session = game_manager.get_session(request.game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    success, message = game_manager.sell_option(session, request.option_id)
+
+    state = game_manager.get_game_state(session)
+    return OptionActionResponse(
+        success=success,
+        message=message,
         state=state
     )

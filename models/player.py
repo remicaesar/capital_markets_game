@@ -13,6 +13,8 @@ from config.settings import (
     SHORT_MARGIN_REQUIREMENT, SHORT_BORROW_RATE, MARGIN_CALL_THRESHOLD, SHORT_LOCATE_FEE,
     SLIPPAGE_FACTOR, BASE_DAILY_VOLUME, MIN_SLIPPAGE, MAX_SLIPPAGE
 )
+import uuid
+from models.options import Option, OptionType, options_manager
 
 console = Console()
 
@@ -35,6 +37,14 @@ class Player:
     total_borrow_fees_paid: float = 0.0
     margin_calls_received: int = 0
     total_slippage_paid: float = 0.0  # Track market impact costs
+
+    # Pending orders (limit orders, stop loss, take profit)
+    pending_orders: List[Dict] = field(default_factory=list)
+    next_order_id: int = 1
+
+    # Options positions
+    options_positions: List[Option] = field(default_factory=list)
+    options_pnl_realized: float = 0.0  # Track realized P&L from options
 
     @staticmethod
     def calculate_slippage(shares: int, company, is_buy: bool) -> tuple:
@@ -102,8 +112,8 @@ class Player:
         return self.margin_equity(market) / SHORT_MARGIN_REQUIREMENT
 
     def net_worth(self, market: "Market") -> float:
-        """Total net worth including short position P&L"""
-        return self.cash + self.portfolio_value(market) + self.short_position_pnl(market)
+        """Total net worth including short position P&L and options"""
+        return self.cash + self.portfolio_value(market) + self.short_position_pnl(market) + self.options_value(market)
 
     def total_return_pct(self, market: "Market") -> float:
         return ((self.net_worth(market) - self.starting_cash) / self.starting_cash) * 100
@@ -473,4 +483,524 @@ class Player:
             if recent_sharpe > 1.0:
                 self.skill_rating = min(1.0, self.skill_rating + 0.02)
             elif recent_sharpe < -0.5:
-                self.skill_rating = max(0.0, self.skill_rating - 0.02) 
+                self.skill_rating = max(0.0, self.skill_rating - 0.02)
+
+    # =========================================================================
+    # Limit Orders, Stop Loss, Take Profit
+    # =========================================================================
+
+    def place_order(self, market: "Market", order_type: str, action: str,
+                    company_name: str, shares: int, limit_price: float) -> Tuple[bool, str, Dict]:
+        """
+        Place a pending order.
+
+        Args:
+            order_type: 'limit', 'stop_loss', or 'take_profit'
+            action: 'buy', 'sell', 'short', or 'cover'
+            company_name: Name of the company
+            shares: Number of shares
+            limit_price: Target price for execution
+
+        Returns:
+            (success, message, order_dict)
+        """
+        if company_name not in market.companies:
+            return False, f"Company '{company_name}' not found", {}
+
+        company = market.companies[company_name]
+        current_price = company.price
+
+        # Validate order logic
+        if order_type == 'limit':
+            if action == 'buy' and limit_price >= current_price:
+                return False, f"Limit buy price (${limit_price:.2f}) must be below current price (${current_price:.2f})", {}
+            if action == 'sell' and limit_price <= current_price:
+                return False, f"Limit sell price (${limit_price:.2f}) must be above current price (${current_price:.2f})", {}
+            if action == 'short' and limit_price <= current_price:
+                return False, f"Limit short price (${limit_price:.2f}) must be above current price (${current_price:.2f})", {}
+            if action == 'cover' and limit_price >= current_price:
+                return False, f"Limit cover price (${limit_price:.2f}) must be below current price (${current_price:.2f})", {}
+
+        elif order_type == 'stop_loss':
+            if action not in ['sell', 'cover']:
+                return False, "Stop loss orders can only be used for sell or cover actions", {}
+            if action == 'sell':
+                if company_name not in self.portfolio:
+                    return False, f"You don't own any {company_name} to set a stop loss", {}
+                if limit_price >= current_price:
+                    return False, f"Stop loss price (${limit_price:.2f}) must be below current price (${current_price:.2f})", {}
+            if action == 'cover':
+                if company_name not in self.short_positions:
+                    return False, f"You don't have a short position in {company_name}", {}
+                if limit_price <= current_price:
+                    return False, f"Stop loss for cover (${limit_price:.2f}) must be above current price (${current_price:.2f})", {}
+
+        elif order_type == 'take_profit':
+            if action not in ['sell', 'cover']:
+                return False, "Take profit orders can only be used for sell or cover actions", {}
+            if action == 'sell':
+                if company_name not in self.portfolio:
+                    return False, f"You don't own any {company_name} to set a take profit", {}
+                if limit_price <= current_price:
+                    return False, f"Take profit price (${limit_price:.2f}) must be above current price (${current_price:.2f})", {}
+            if action == 'cover':
+                if company_name not in self.short_positions:
+                    return False, f"You don't have a short position in {company_name}", {}
+                if limit_price >= current_price:
+                    return False, f"Take profit for cover (${limit_price:.2f}) must be below current price (${current_price:.2f})", {}
+
+        # Validate shares
+        if action == 'sell' and company_name in self.portfolio:
+            owned = self.portfolio[company_name][0]
+            if shares > owned:
+                return False, f"You only own {owned} shares of {company_name}", {}
+        if action == 'cover' and company_name in self.short_positions:
+            shorted = self.short_positions[company_name][0]
+            if shares > shorted:
+                return False, f"You only have {shorted} shares shorted", {}
+
+        # Create the order
+        order = {
+            "id": self.next_order_id,
+            "order_type": order_type,
+            "action": action,
+            "company": company_name,
+            "shares": shares,
+            "limit_price": limit_price,
+            "created_turn": market.turn,
+            "created_price": current_price,
+            "status": "pending"
+        }
+        self.next_order_id += 1
+        self.pending_orders.append(order)
+
+        order_desc = f"{order_type.replace('_', ' ').title()} {action.upper()} {shares} {company_name} @ ${limit_price:.2f}"
+        console.print(f"[cyan]📋 Order placed: {order_desc}[/cyan]")
+
+        return True, f"Order #{order['id']} placed: {order_desc}", order
+
+    def cancel_order(self, order_id: int) -> Tuple[bool, str]:
+        """Cancel a pending order by ID"""
+        for i, order in enumerate(self.pending_orders):
+            if order["id"] == order_id:
+                cancelled = self.pending_orders.pop(i)
+                msg = f"Order #{order_id} cancelled: {cancelled['order_type']} {cancelled['action']} {cancelled['shares']} {cancelled['company']}"
+                console.print(f"[yellow]❌ {msg}[/yellow]")
+                return True, msg
+        return False, f"Order #{order_id} not found"
+
+    def process_pending_orders(self, market: "Market") -> List[str]:
+        """
+        Process all pending orders against current market prices.
+        Called at the start of each turn after prices update.
+
+        Returns list of execution messages.
+        """
+        executed_messages = []
+        orders_to_remove = []
+
+        for order in self.pending_orders:
+            company_name = order["company"]
+            if company_name not in market.companies:
+                orders_to_remove.append(order["id"])
+                continue
+
+            company = market.companies[company_name]
+            current_price = company.price
+            limit_price = order["limit_price"]
+            order_type = order["order_type"]
+            action = order["action"]
+            shares = order["shares"]
+
+            should_execute = False
+
+            # Check if order should trigger
+            if order_type == 'limit':
+                if action == 'buy' and current_price <= limit_price:
+                    should_execute = True
+                elif action == 'sell' and current_price >= limit_price:
+                    should_execute = True
+                elif action == 'short' and current_price >= limit_price:
+                    should_execute = True
+                elif action == 'cover' and current_price <= limit_price:
+                    should_execute = True
+
+            elif order_type == 'stop_loss':
+                if action == 'sell' and current_price <= limit_price:
+                    should_execute = True
+                elif action == 'cover' and current_price >= limit_price:
+                    should_execute = True
+
+            elif order_type == 'take_profit':
+                if action == 'sell' and current_price >= limit_price:
+                    should_execute = True
+                elif action == 'cover' and current_price <= limit_price:
+                    should_execute = True
+
+            if should_execute:
+                # Validate the order can still be executed
+                can_execute = True
+                if action == 'sell' and (company_name not in self.portfolio or self.portfolio[company_name][0] < shares):
+                    can_execute = False
+                    executed_messages.append(f"⚠️ Order #{order['id']} expired: Not enough shares to sell")
+                elif action == 'cover' and (company_name not in self.short_positions or self.short_positions[company_name][0] < shares):
+                    can_execute = False
+                    executed_messages.append(f"⚠️ Order #{order['id']} expired: No short position to cover")
+
+                if can_execute:
+                    # Execute the trade
+                    success = False
+                    if action == 'buy':
+                        success = self.buy(market, company, shares)
+                    elif action == 'sell':
+                        success = self.sell(market, company, shares)
+                    elif action == 'short':
+                        success = self.short(market, company, shares)
+                    elif action == 'cover':
+                        success = self.cover(market, company, shares)
+
+                    if success:
+                        order_desc = f"{order_type.replace('_', ' ').title()}"
+                        executed_messages.append(
+                            f"✅ Order #{order['id']} executed: {order_desc} {action.upper()} {shares} {company_name} @ ${current_price:.2f} (target: ${limit_price:.2f})"
+                        )
+                    else:
+                        executed_messages.append(f"⚠️ Order #{order['id']} failed to execute")
+
+                orders_to_remove.append(order["id"])
+
+        # Remove executed/expired orders
+        self.pending_orders = [o for o in self.pending_orders if o["id"] not in orders_to_remove]
+
+        # Print execution messages
+        for msg in executed_messages:
+            if msg.startswith("✅"):
+                console.print(f"[green]{msg}[/green]")
+            else:
+                console.print(f"[yellow]{msg}[/yellow]")
+
+        return executed_messages
+
+    def get_pending_orders(self) -> List[Dict]:
+        """Get all pending orders"""
+        return self.pending_orders.copy()
+
+    # =========================================================================
+    # Options Trading
+    # =========================================================================
+
+    def buy_option(self, market: "Market", company_name: str, option_type: str,
+                   strike_price: float, contracts: int, turns_to_expiry: int = 5) -> Tuple[bool, str, Dict]:
+        """
+        Buy a call or put option.
+
+        Args:
+            company_name: Name of the underlying company
+            option_type: 'call' or 'put'
+            strike_price: Strike price for the option
+            contracts: Number of contracts (each = 100 shares)
+            turns_to_expiry: Turns until expiration (default 5)
+
+        Returns:
+            (success, message, option_dict)
+        """
+        if company_name not in market.companies:
+            return False, f"Company '{company_name}' not found", {}
+
+        company = market.companies[company_name]
+
+        # Parse option type
+        try:
+            opt_type = OptionType(option_type.lower())
+        except ValueError:
+            return False, f"Invalid option type: {option_type}. Use 'call' or 'put'", {}
+
+        if contracts < 1:
+            return False, "Must buy at least 1 contract", {}
+
+        if strike_price <= 0:
+            return False, "Strike price must be positive", {}
+
+        # Create the option to get premium
+        option = options_manager.create_option(
+            company, opt_type, strike_price, contracts, market.turn, turns_to_expiry
+        )
+
+        # Calculate total cost
+        total_premium = option.total_premium_paid()
+        transaction_fee = total_premium * TRANSACTION_FEE
+
+        total_cost = total_premium + transaction_fee
+
+        if total_cost > self.cash:
+            return False, f"Insufficient funds. Need ${total_cost:,.2f}, have ${self.cash:,.2f}", {}
+
+        # Execute purchase
+        self.cash -= total_cost
+        self.total_fees_paid += transaction_fee
+        self.options_positions.append(option)
+        self.trade_count += 1
+
+        # Record trade
+        self.trade_history.append({
+            "type": f"buy_{option_type}",
+            "company": company_name,
+            "contracts": contracts,
+            "strike": strike_price,
+            "premium": option.premium,
+            "total_cost": total_cost,
+            "expiry_turn": option.expiry_turn,
+            "turn": market.turn
+        })
+
+        option_desc = f"{option_type.upper()} {company_name} @ ${strike_price:.2f}"
+        console.print(f"[cyan]📋 Bought {contracts} {option_desc} contracts for ${total_premium:.2f}[/cyan]")
+        console.print(f"[dim]   Premium: ${option.premium:.2f}/share | Expires: Turn {option.expiry_turn} | Fee: ${transaction_fee:.2f}[/dim]")
+
+        option_dict = {
+            "id": option.id,
+            "type": option_type,
+            "company": company_name,
+            "strike": strike_price,
+            "premium": option.premium,
+            "contracts": contracts,
+            "expiry_turn": option.expiry_turn
+        }
+
+        return True, f"Bought {contracts} {option_desc} contracts", option_dict
+
+    def exercise_option(self, market: "Market", option_id: int) -> Tuple[bool, str]:
+        """
+        Exercise an option before expiry.
+
+        For calls: Buy shares at strike price (must have cash)
+        For puts: Sell shares at strike price (must own shares)
+        """
+        option = None
+        for opt in self.options_positions:
+            if opt.id == option_id:
+                option = opt
+                break
+
+        if option is None:
+            return False, f"Option #{option_id} not found"
+
+        if option.is_expired(market.turn):
+            return False, f"Option #{option_id} has expired"
+
+        company = market.companies.get(option.company)
+        if not company:
+            return False, f"Company {option.company} not found"
+
+        current_price = company.price
+        shares = option.contracts * 100
+
+        if not option.is_in_the_money(current_price):
+            return False, f"Option is out of the money (current: ${current_price:.2f}, strike: ${option.strike_price:.2f})"
+
+        if option.option_type == OptionType.CALL:
+            # Exercise call: pay strike price to buy shares
+            cost = option.strike_price * shares
+            transaction_fee = cost * TRANSACTION_FEE
+
+            if cost + transaction_fee > self.cash:
+                return False, f"Insufficient funds to exercise. Need ${cost + transaction_fee:,.2f}"
+
+            self.cash -= (cost + transaction_fee)
+            self.total_fees_paid += transaction_fee
+
+            # Add shares to portfolio
+            existing_shares, avg_price = self.portfolio.get(option.company, (0, 0))
+            if existing_shares > 0:
+                new_avg = ((existing_shares * avg_price) + (shares * option.strike_price)) / (existing_shares + shares)
+            else:
+                new_avg = option.strike_price
+            self.portfolio[option.company] = (existing_shares + shares, new_avg)
+
+            profit = (current_price - option.strike_price) * shares - option.total_premium_paid()
+            self.options_pnl_realized += profit
+
+            console.print(f"[green]✅ Exercised CALL: Bought {shares} {option.company} @ ${option.strike_price:.2f}[/green]")
+            console.print(f"[dim]   Market value: ${current_price * shares:,.2f} | Your cost: ${cost:,.2f} | Net gain: ${profit:,.2f}[/dim]")
+
+        else:  # PUT
+            # Exercise put: sell shares at strike price
+            if option.company not in self.portfolio:
+                return False, f"You don't own {option.company} shares to exercise the put"
+
+            owned_shares, avg_price = self.portfolio[option.company]
+            if owned_shares < shares:
+                return False, f"You only own {owned_shares} shares, need {shares} to exercise"
+
+            # Sell shares at strike price
+            proceeds = option.strike_price * shares
+            transaction_fee = proceeds * TRANSACTION_FEE
+            net_proceeds = proceeds - transaction_fee
+
+            self.cash += net_proceeds
+            self.total_fees_paid += transaction_fee
+
+            # Remove shares from portfolio
+            remaining = owned_shares - shares
+            if remaining > 0:
+                self.portfolio[option.company] = (remaining, avg_price)
+            else:
+                del self.portfolio[option.company]
+
+            profit = (option.strike_price - current_price) * shares - option.total_premium_paid()
+            self.options_pnl_realized += profit
+
+            console.print(f"[green]✅ Exercised PUT: Sold {shares} {option.company} @ ${option.strike_price:.2f}[/green]")
+            console.print(f"[dim]   Market price: ${current_price:.2f} | Your price: ${option.strike_price:.2f} | Net gain: ${profit:,.2f}[/dim]")
+
+        # Remove the exercised option
+        self.options_positions = [o for o in self.options_positions if o.id != option_id]
+        self.trade_count += 1
+
+        self.trade_history.append({
+            "type": f"exercise_{option.option_type.value}",
+            "company": option.company,
+            "contracts": option.contracts,
+            "strike": option.strike_price,
+            "market_price": current_price,
+            "pnl": profit,
+            "turn": market.turn
+        })
+
+        return True, f"Exercised option #{option_id} for ${profit:,.2f} profit"
+
+    def sell_option(self, market: "Market", option_id: int) -> Tuple[bool, str]:
+        """
+        Sell an option back to the market before expiry.
+        You receive the estimated current value minus transaction fees.
+        """
+        option = None
+        for opt in self.options_positions:
+            if opt.id == option_id:
+                option = opt
+                break
+
+        if option is None:
+            return False, f"Option #{option_id} not found"
+
+        if option.is_expired(market.turn):
+            return False, f"Option #{option_id} has expired and is worthless"
+
+        company = market.companies.get(option.company)
+        if not company:
+            return False, f"Company {option.company} not found"
+
+        current_price = company.price
+        current_value = option.estimate_current_value(current_price, market.turn)
+
+        # Apply bid-ask spread (you sell at slightly less than theoretical value)
+        sell_value = current_value * 0.95  # 5% spread
+        transaction_fee = sell_value * TRANSACTION_FEE
+        net_proceeds = sell_value - transaction_fee
+
+        pnl = net_proceeds - option.total_premium_paid()
+
+        self.cash += net_proceeds
+        self.total_fees_paid += transaction_fee
+        self.options_pnl_realized += pnl
+
+        # Remove the sold option
+        self.options_positions = [o for o in self.options_positions if o.id != option_id]
+        self.trade_count += 1
+
+        self.trade_history.append({
+            "type": f"sell_{option.option_type.value}",
+            "company": option.company,
+            "contracts": option.contracts,
+            "strike": option.strike_price,
+            "sell_value": sell_value,
+            "pnl": pnl,
+            "turn": market.turn
+        })
+
+        color = "green" if pnl >= 0 else "red"
+        console.print(f"[{color}]💰 Sold {option.option_type.value.upper()} option for ${net_proceeds:,.2f} | P/L: ${pnl:,.2f}[/{color}]")
+
+        return True, f"Sold option #{option_id} for ${net_proceeds:,.2f} (P/L: ${pnl:,.2f})"
+
+    def process_expired_options(self, market: "Market") -> List[str]:
+        """
+        Process options that have expired.
+        ITM options are auto-exercised if possible, OTM expire worthless.
+        Called at the end of each turn.
+        """
+        messages = []
+        options_to_remove = []
+
+        for option in self.options_positions:
+            if option.is_expired(market.turn):
+                company = market.companies.get(option.company)
+                if not company:
+                    options_to_remove.append(option.id)
+                    continue
+
+                current_price = company.price
+
+                if option.is_in_the_money(current_price):
+                    # Try to auto-exercise ITM options
+                    shares = option.contracts * 100
+
+                    if option.option_type == OptionType.CALL:
+                        cost = option.strike_price * shares
+                        if cost <= self.cash:
+                            # Auto-exercise
+                            success, msg = self.exercise_option(market, option.id)
+                            if success:
+                                messages.append(f"📋 Auto-exercised ITM CALL #{option.id}: {msg}")
+                            else:
+                                # Can't exercise, expires worthless
+                                loss = option.total_premium_paid()
+                                self.options_pnl_realized -= loss
+                                messages.append(f"⚠️ CALL #{option.id} expired ITM but couldn't exercise (insufficient funds). Lost ${loss:.2f}")
+                                options_to_remove.append(option.id)
+                        else:
+                            loss = option.total_premium_paid()
+                            self.options_pnl_realized -= loss
+                            messages.append(f"⚠️ CALL #{option.id} expired ITM but couldn't exercise (need ${cost:.2f}). Lost ${loss:.2f}")
+                            options_to_remove.append(option.id)
+                    else:  # PUT
+                        if option.company in self.portfolio and self.portfolio[option.company][0] >= shares:
+                            success, msg = self.exercise_option(market, option.id)
+                            if success:
+                                messages.append(f"📋 Auto-exercised ITM PUT #{option.id}: {msg}")
+                        else:
+                            loss = option.total_premium_paid()
+                            self.options_pnl_realized -= loss
+                            messages.append(f"⚠️ PUT #{option.id} expired ITM but no shares to sell. Lost ${loss:.2f}")
+                            options_to_remove.append(option.id)
+                else:
+                    # OTM - expires worthless
+                    loss = option.total_premium_paid()
+                    self.options_pnl_realized -= loss
+                    opt_type = option.option_type.value.upper()
+                    messages.append(f"📉 {opt_type} #{option.id} ({option.company} @ ${option.strike_price:.2f}) expired worthless. Lost ${loss:.2f}")
+                    options_to_remove.append(option.id)
+
+        # Remove expired options
+        self.options_positions = [o for o in self.options_positions if o.id not in options_to_remove]
+
+        for msg in messages:
+            if "Auto-exercised" in msg:
+                console.print(f"[green]{msg}[/green]")
+            else:
+                console.print(f"[yellow]{msg}[/yellow]")
+
+        return messages
+
+    def options_value(self, market: "Market") -> float:
+        """Calculate total current value of all options positions"""
+        total = 0.0
+        for option in self.options_positions:
+            company = market.companies.get(option.company)
+            if company:
+                total += option.estimate_current_value(company.price, market.turn)
+        return total
+
+    def get_options_positions(self) -> List[Option]:
+        """Get all options positions"""
+        return self.options_positions.copy() 

@@ -17,6 +17,12 @@ let gameState = {
     achievements: {}
 };
 
+// Stock chart instance
+let stockChart = null;
+
+// Current option chain data
+let currentOptionChain = null;
+
 // Achievement Definitions
 const ACHIEVEMENTS = {
     first_trade: {
@@ -173,6 +179,53 @@ async function loadGame(slot) {
     return await apiCall('/load', 'POST', { slot });
 }
 
+async function placeOrder(gameId, orderType, action, company, shares, limitPrice) {
+    return await apiCall('/order', 'POST', {
+        game_id: gameId,
+        order_type: orderType,
+        action,
+        company,
+        shares,
+        limit_price: limitPrice
+    });
+}
+
+async function cancelOrder(gameId, orderId) {
+    return await apiCall('/order/cancel', 'POST', {
+        game_id: gameId,
+        order_id: orderId
+    });
+}
+
+// Options API
+async function getOptionChain(gameId, company) {
+    return await apiCall(`/options/chain?game_id=${gameId}&company=${encodeURIComponent(company)}`);
+}
+
+async function buyOption(gameId, company, optionType, strikePrice, contracts) {
+    return await apiCall('/options/buy', 'POST', {
+        game_id: gameId,
+        company,
+        option_type: optionType,
+        strike_price: strikePrice,
+        contracts
+    });
+}
+
+async function exerciseOption(gameId, optionId) {
+    return await apiCall('/options/exercise', 'POST', {
+        game_id: gameId,
+        option_id: optionId
+    });
+}
+
+async function sellOption(gameId, optionId) {
+    return await apiCall('/options/sell', 'POST', {
+        game_id: gameId,
+        option_id: optionId
+    });
+}
+
 // ============================================================================
 // UI Update Functions
 // ============================================================================
@@ -227,7 +280,10 @@ function updateMarketTable(companies) {
         const changeSign = company.change_pct >= 0 ? '+' : '';
         
         row.innerHTML = `
-            <td class="company-name">${company.name}</td>
+            <td class="company-name" data-company="${company.name}">
+                <span class="company-name-text">${company.name}</span>
+                <span class="chart-icon" title="View Chart">📊</span>
+            </td>
             <td>${company.sector}</td>
             <td>$${company.price.toFixed(2)}</td>
             <td class="${changeClass}">${changeSign}${company.change_pct.toFixed(2)}%</td>
@@ -237,9 +293,21 @@ function updateMarketTable(companies) {
             <td>${company.beta.toFixed(2)}</td>
             <td>${company.trend}</td>
         `;
-        
-        // Click to select company
-        row.addEventListener('click', () => selectCompany(company.name));
+
+        // Click on row to select company
+        row.addEventListener('click', (e) => {
+            // Don't select if clicking on chart icon
+            if (!e.target.classList.contains('chart-icon')) {
+                selectCompany(company.name);
+            }
+        });
+
+        // Click on company name or chart icon to show chart
+        const companyCell = row.querySelector('.company-name');
+        companyCell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showStockChart(company.name);
+        });
         
         tbody.appendChild(row);
     });
@@ -494,6 +562,435 @@ function drawPerformanceChart() {
 }
 
 // ============================================================================
+// Stock Price Chart
+// ============================================================================
+
+function showStockChart(companyName) {
+    const company = gameState.companies.find(c => c.name === companyName);
+    if (!company) return;
+
+    // Update modal header info
+    document.getElementById('chart-company-name').textContent = company.name;
+    document.getElementById('chart-sector').textContent = company.sector;
+    document.getElementById('chart-current-price').textContent = `$${company.price.toFixed(2)}`;
+
+    const changeEl = document.getElementById('chart-change');
+    const changeSign = company.change_pct >= 0 ? '+' : '';
+    changeEl.textContent = `${changeSign}${company.change_pct.toFixed(2)}%`;
+    changeEl.className = `chart-change ${company.change_pct >= 0 ? 'positive' : 'negative'}`;
+
+    // Update stats
+    document.getElementById('chart-rsi').textContent = company.rsi.toFixed(0);
+    document.getElementById('chart-momentum').textContent = `${company.momentum >= 0 ? '+' : ''}${company.momentum.toFixed(2)}%`;
+    document.getElementById('chart-beta').textContent = company.beta.toFixed(2);
+    document.getElementById('chart-volume').textContent = company.volume.toFixed(2);
+
+    // Store selected company for quick trade buttons
+    gameState.chartCompany = companyName;
+
+    // Render the chart
+    renderStockChart(company);
+
+    // Show modal
+    document.getElementById('chart-modal').classList.remove('hidden');
+}
+
+function renderStockChart(company) {
+    const ctx = document.getElementById('stock-price-chart').getContext('2d');
+
+    // Destroy existing chart if it exists
+    if (stockChart) {
+        stockChart.destroy();
+    }
+
+    const priceHistory = company.price_history || [company.price];
+    const volumeHistory = company.volume_history || [1];
+    const labels = priceHistory.map((_, i) => `T${i + 1}`);
+
+    // Calculate price change colors for each segment
+    const priceColors = [];
+    const borderColors = [];
+    for (let i = 0; i < priceHistory.length; i++) {
+        if (i === 0) {
+            priceColors.push('rgba(0, 170, 255, 0.5)');
+            borderColors.push('rgba(0, 170, 255, 1)');
+        } else {
+            const isUp = priceHistory[i] >= priceHistory[i - 1];
+            priceColors.push(isUp ? 'rgba(0, 255, 0, 0.5)' : 'rgba(255, 68, 68, 0.5)');
+            borderColors.push(isUp ? 'rgba(0, 255, 0, 1)' : 'rgba(255, 68, 68, 1)');
+        }
+    }
+
+    // Determine if overall trend is positive
+    const startPrice = priceHistory[0];
+    const endPrice = priceHistory[priceHistory.length - 1];
+    const isPositive = endPrice >= startPrice;
+    const lineColor = isPositive ? 'rgba(0, 255, 0, 1)' : 'rgba(255, 68, 68, 1)';
+    const fillColor = isPositive ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 68, 68, 0.1)';
+
+    stockChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Price',
+                    data: priceHistory,
+                    borderColor: lineColor,
+                    backgroundColor: fillColor,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.1,
+                    pointRadius: priceHistory.length > 20 ? 0 : 3,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: lineColor,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Volume',
+                    data: volumeHistory,
+                    type: 'bar',
+                    backgroundColor: 'rgba(255, 153, 0, 0.3)',
+                    borderColor: 'rgba(255, 153, 0, 0.8)',
+                    borderWidth: 1,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: '#888',
+                        font: {
+                            family: "'Consolas', 'Monaco', monospace",
+                            size: 11
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(10, 10, 10, 0.9)',
+                    titleColor: '#ff9900',
+                    bodyColor: '#fff',
+                    borderColor: '#ff9900',
+                    borderWidth: 1,
+                    titleFont: {
+                        family: "'Consolas', 'Monaco', monospace"
+                    },
+                    bodyFont: {
+                        family: "'Consolas', 'Monaco', monospace"
+                    },
+                    callbacks: {
+                        label: function(context) {
+                            if (context.dataset.label === 'Price') {
+                                return `Price: $${context.parsed.y.toFixed(2)}`;
+                            } else {
+                                return `Volume: ${context.parsed.y.toFixed(2)}x`;
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        color: 'rgba(51, 51, 51, 0.5)'
+                    },
+                    ticks: {
+                        color: '#666',
+                        font: {
+                            family: "'Consolas', 'Monaco', monospace",
+                            size: 10
+                        },
+                        maxTicksLimit: 10
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    grid: {
+                        color: 'rgba(51, 51, 51, 0.5)'
+                    },
+                    ticks: {
+                        color: '#888',
+                        font: {
+                            family: "'Consolas', 'Monaco', monospace",
+                            size: 11
+                        },
+                        callback: function(value) {
+                            return '$' + value.toFixed(0);
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Price ($)',
+                        color: '#888'
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                    ticks: {
+                        color: '#ff9900',
+                        font: {
+                            family: "'Consolas', 'Monaco', monospace",
+                            size: 10
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Volume',
+                        color: '#ff9900'
+                    },
+                    min: 0,
+                    max: Math.max(...volumeHistory) * 3 // Make volume bars shorter
+                }
+            }
+        }
+    });
+}
+
+function closeStockChart() {
+    document.getElementById('chart-modal').classList.add('hidden');
+    if (stockChart) {
+        stockChart.destroy();
+        stockChart = null;
+    }
+}
+
+// ============================================================================
+// Options Trading
+// ============================================================================
+
+async function showOptionsModal(companyName) {
+    if (!gameState.gameId) return;
+
+    try {
+        const chain = await getOptionChain(gameState.gameId, companyName);
+        currentOptionChain = chain;
+
+        // Update header
+        document.getElementById('options-company-name').textContent = companyName;
+        document.getElementById('options-current-price').textContent = `$${chain.current_price.toFixed(2)}`;
+
+        // Populate strike select
+        const strikeSelect = document.getElementById('option-strike-select');
+        strikeSelect.innerHTML = '<option value="">Select strike...</option>';
+        chain.calls.forEach(call => {
+            const option = document.createElement('option');
+            option.value = call.strike;
+            option.textContent = `$${call.strike.toFixed(2)}`;
+            if (Math.abs(call.strike - chain.current_price) < 1) {
+                option.textContent += ' (ATM)';
+            }
+            strikeSelect.appendChild(option);
+        });
+
+        // Populate calls list
+        const callsList = document.getElementById('calls-list');
+        callsList.innerHTML = chain.calls.map(call => `
+            <div class="option-row ${call.itm ? 'itm' : 'otm'}" data-strike="${call.strike}" data-type="call">
+                <span class="option-premium">$${call.premium.toFixed(2)}</span>
+                <span class="option-cost">($${call.total_cost.toFixed(0)}/contract)</span>
+            </div>
+        `).join('');
+
+        // Populate strikes list
+        const strikesList = document.getElementById('strikes-list');
+        strikesList.innerHTML = chain.calls.map(call => {
+            const isAtm = Math.abs(call.strike - chain.current_price) < chain.current_price * 0.03;
+            return `<div class="strike-row ${isAtm ? 'atm' : ''}">${call.strike.toFixed(2)}</div>`;
+        }).join('');
+
+        // Populate puts list
+        const putsList = document.getElementById('puts-list');
+        putsList.innerHTML = chain.puts.map(put => `
+            <div class="option-row ${put.itm ? 'itm' : 'otm'}" data-strike="${put.strike}" data-type="put">
+                <span class="option-premium">$${put.premium.toFixed(2)}</span>
+                <span class="option-cost">($${put.total_cost.toFixed(0)}/contract)</span>
+            </div>
+        `).join('');
+
+        // Add click handlers to option rows
+        document.querySelectorAll('.option-row').forEach(row => {
+            row.addEventListener('click', () => {
+                document.getElementById('option-type-select').value = row.dataset.type;
+                document.getElementById('option-strike-select').value = row.dataset.strike;
+                updateOptionCostPreview();
+            });
+        });
+
+        // Show modal
+        document.getElementById('options-modal').classList.remove('hidden');
+        updateOptionCostPreview();
+
+    } catch (error) {
+        showTradeMessage(`Failed to load options: ${error.message}`, true);
+    }
+}
+
+function closeOptionsModal() {
+    document.getElementById('options-modal').classList.add('hidden');
+    currentOptionChain = null;
+}
+
+function updateOptionCostPreview() {
+    const strikeSelect = document.getElementById('option-strike-select');
+    const typeSelect = document.getElementById('option-type-select');
+    const contractsInput = document.getElementById('option-contracts-input');
+    const costDisplay = document.getElementById('option-total-cost');
+
+    if (!currentOptionChain || !strikeSelect.value) {
+        costDisplay.textContent = '$0.00';
+        return;
+    }
+
+    const strike = parseFloat(strikeSelect.value);
+    const contracts = parseInt(contractsInput.value) || 1;
+    const optionType = typeSelect.value;
+
+    const optionList = optionType === 'call' ? currentOptionChain.calls : currentOptionChain.puts;
+    const option = optionList.find(o => o.strike === strike);
+
+    if (option) {
+        const totalCost = option.total_cost * contracts;
+        costDisplay.textContent = `$${totalCost.toFixed(2)}`;
+    } else {
+        costDisplay.textContent = '$0.00';
+    }
+}
+
+async function handleBuyOption() {
+    if (!gameState.gameId || !currentOptionChain) return;
+
+    const company = currentOptionChain.company;
+    const optionType = document.getElementById('option-type-select').value;
+    const strikePrice = parseFloat(document.getElementById('option-strike-select').value);
+    const contracts = parseInt(document.getElementById('option-contracts-input').value);
+
+    if (!strikePrice) {
+        showTradeMessage('Please select a strike price', true);
+        return;
+    }
+
+    if (!contracts || contracts < 1) {
+        showTradeMessage('Please enter valid number of contracts', true);
+        return;
+    }
+
+    try {
+        const response = await buyOption(gameState.gameId, company, optionType, strikePrice, contracts);
+
+        updateFullUI(response.state);
+        showTradeMessage(response.message, !response.success);
+
+        if (response.success) {
+            closeOptionsModal();
+        }
+    } catch (error) {
+        showTradeMessage(`Failed to buy option: ${error.message}`, true);
+    }
+}
+
+function updateOptionsPositions(options) {
+    const container = document.getElementById('options-content');
+    const section = document.getElementById('options-section');
+
+    if (!options || options.length === 0) {
+        container.innerHTML = '<p class="empty-message">No options positions</p>';
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+
+    container.innerHTML = options.map(option => {
+        const typeClass = option.type;
+        const pnlClass = option.pnl >= 0 ? 'positive' : 'negative';
+        const pnlSign = option.pnl >= 0 ? '+' : '';
+        const itmClass = option.in_the_money ? 'itm' : 'otm';
+
+        return `
+            <div class="option-position-item ${typeClass}" data-option-id="${option.id}">
+                <div class="option-position-header">
+                    <span class="option-type-badge ${typeClass}">${option.type.toUpperCase()}</span>
+                    <span class="option-company">${option.company}</span>
+                    <span class="option-strike">@ $${option.strike_price.toFixed(2)}</span>
+                    <span class="option-itm-badge ${itmClass}">${option.in_the_money ? 'ITM' : 'OTM'}</span>
+                </div>
+                <div class="option-position-details">
+                    <span class="option-contracts">${option.contracts} contract${option.contracts > 1 ? 's' : ''}</span>
+                    <span class="option-expiry">Expires: T${option.expiry_turn} (${option.turns_remaining} turns)</span>
+                    <span class="option-value">Value: $${option.current_value.toFixed(2)}</span>
+                    <span class="option-pnl ${pnlClass}">P/L: ${pnlSign}$${option.pnl.toFixed(2)}</span>
+                </div>
+                <div class="option-position-actions">
+                    <button class="option-action-btn exercise-btn" data-option-id="${option.id}"
+                            ${!option.in_the_money ? 'disabled title="Option is out of the money"' : ''}>
+                        EXERCISE
+                    </button>
+                    <button class="option-action-btn sell-btn" data-option-id="${option.id}">
+                        SELL
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Add event handlers
+    container.querySelectorAll('.exercise-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const optionId = parseInt(btn.dataset.optionId);
+            await handleExerciseOption(optionId);
+        });
+    });
+
+    container.querySelectorAll('.sell-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const optionId = parseInt(btn.dataset.optionId);
+            await handleSellOption(optionId);
+        });
+    });
+}
+
+async function handleExerciseOption(optionId) {
+    if (!gameState.gameId) return;
+
+    try {
+        const response = await exerciseOption(gameState.gameId, optionId);
+        updateFullUI(response.state);
+        showTradeMessage(response.message, !response.success);
+    } catch (error) {
+        showTradeMessage(`Failed to exercise option: ${error.message}`, true);
+    }
+}
+
+async function handleSellOption(optionId) {
+    if (!gameState.gameId) return;
+
+    try {
+        const response = await sellOption(gameState.gameId, optionId);
+        updateFullUI(response.state);
+        showTradeMessage(response.message, !response.success);
+    } catch (error) {
+        showTradeMessage(`Failed to sell option: ${error.message}`, true);
+    }
+}
+
+// ============================================================================
 // Trade History
 // ============================================================================
 
@@ -607,11 +1104,78 @@ function showTradeMessage(message, isError = false) {
     }, 5000);
 }
 
+function updatePendingOrders(orders) {
+    const container = document.getElementById('pending-orders-content');
+    const section = document.getElementById('pending-orders-section');
+
+    if (!orders || orders.length === 0) {
+        container.innerHTML = '<p class="empty-message">No pending orders</p>';
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+
+    container.innerHTML = orders.map(order => {
+        const orderTypeLabel = order.order_type.replace('_', ' ').toUpperCase();
+        const actionClass = order.action.toLowerCase();
+        const priceDirection = order.current_price > order.limit_price ? '↓' : '↑';
+        const priceDiff = ((order.limit_price - order.current_price) / order.current_price * 100).toFixed(1);
+        const priceDiffSign = priceDiff >= 0 ? '+' : '';
+
+        return `
+            <div class="order-item" data-order-id="${order.id}">
+                <div class="order-header">
+                    <span class="order-type ${order.order_type}">${orderTypeLabel}</span>
+                    <span class="order-action ${actionClass}">${order.action.toUpperCase()}</span>
+                    <span class="order-company">${order.company}</span>
+                </div>
+                <div class="order-details">
+                    <span class="order-shares">${order.shares} shares</span>
+                    <span class="order-prices">
+                        Target: <span class="target-price">$${order.limit_price.toFixed(2)}</span>
+                        ${priceDirection}
+                        Current: <span class="current-price">$${order.current_price.toFixed(2)}</span>
+                        <span class="price-diff">(${priceDiffSign}${priceDiff}%)</span>
+                    </span>
+                </div>
+                <div class="order-meta">
+                    <span class="order-created">Created T${order.created_turn} @ $${order.created_price.toFixed(2)}</span>
+                    <button class="cancel-order-btn" data-order-id="${order.id}">✕ Cancel</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Add cancel button handlers
+    container.querySelectorAll('.cancel-order-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const orderId = parseInt(btn.dataset.orderId);
+            await handleCancelOrder(orderId);
+        });
+    });
+}
+
+async function handleCancelOrder(orderId) {
+    if (!gameState.gameId) return;
+
+    try {
+        const response = await cancelOrder(gameState.gameId, orderId);
+        updateFullUI(response.state);
+        showTradeMessage(response.message, !response.success);
+    } catch (error) {
+        showTradeMessage(`Failed to cancel order: ${error.message}`, true);
+    }
+}
+
 function updateFullUI(state) {
     updateHeader(state);
     updateMarketTable(state.companies);
     updatePortfolio(state.portfolio);
     updateShortPositions(state.short_positions);
+    updatePendingOrders(state.pending_orders || []);
+    updateOptionsPositions(state.options_positions || []);
     updatePsychology(state.psychology);
     updateStats(state.player);
     updateNews(state.news);
@@ -651,6 +1215,8 @@ async function handleExecuteTrade() {
 
     const company = elements.companySelect.value;
     const shares = parseInt(elements.sharesInput.value);
+    const orderType = elements.orderTypeSelect.value;
+    const limitPrice = parseFloat(elements.limitPriceInput.value);
 
     if (!company) {
         showTradeMessage('Please select a company', true);
@@ -662,6 +1228,42 @@ async function handleExecuteTrade() {
         return;
     }
 
+    // For non-market orders, validate limit price
+    if (orderType !== 'market') {
+        if (!limitPrice || limitPrice <= 0) {
+            showTradeMessage('Please enter a valid limit price', true);
+            return;
+        }
+
+        // Place limit/stop/take-profit order
+        try {
+            const response = await placeOrder(
+                gameState.gameId,
+                orderType,
+                gameState.selectedAction,
+                company,
+                shares,
+                limitPrice
+            );
+
+            updateFullUI(response.state);
+            showTradeMessage(response.message, !response.success);
+
+            if (response.success) {
+                // Reset inputs
+                elements.sharesInput.value = '1';
+                elements.limitPriceInput.value = '';
+                elements.orderTypeSelect.value = 'market';
+                document.querySelector('.limit-price-group').classList.add('hidden');
+                updateOrderPreview();
+            }
+        } catch (error) {
+            showTradeMessage(`Order failed: ${error.message}`, true);
+        }
+        return;
+    }
+
+    // Market order - execute immediately
     try {
         // Get current price before trade
         const companyData = gameState.companies.find(c => c.name === company);
@@ -914,6 +1516,56 @@ function setupEventHandlers() {
 
     elements.sharesInput.addEventListener('input', updateOrderPreview);
 
+    // Order type select - show/hide limit price input
+    elements.orderTypeSelect.addEventListener('change', (e) => {
+        const orderType = e.target.value;
+        const limitPriceGroup = document.querySelector('.limit-price-group');
+        const executeBtn = document.getElementById('btn-execute');
+
+        if (orderType === 'market') {
+            limitPriceGroup.classList.add('hidden');
+            executeBtn.textContent = 'EXECUTE TRADE';
+        } else {
+            limitPriceGroup.classList.remove('hidden');
+            executeBtn.textContent = 'PLACE ORDER';
+
+            // Pre-fill with suggested price based on order type and action
+            const company = gameState.companies.find(c => c.name === elements.companySelect.value);
+            if (company) {
+                let suggestedPrice = company.price;
+                const action = gameState.selectedAction;
+
+                if (orderType === 'limit') {
+                    // Limit buy: below current, Limit sell/short: above current
+                    if (action === 'buy' || action === 'cover') {
+                        suggestedPrice = company.price * 0.95; // 5% below
+                    } else {
+                        suggestedPrice = company.price * 1.05; // 5% above
+                    }
+                } else if (orderType === 'stop_loss') {
+                    // Stop loss sell: below current, Stop loss cover: above current
+                    if (action === 'sell') {
+                        suggestedPrice = company.price * 0.90; // 10% below
+                    } else if (action === 'cover') {
+                        suggestedPrice = company.price * 1.10; // 10% above
+                    }
+                } else if (orderType === 'take_profit') {
+                    // Take profit sell: above current, Take profit cover: below current
+                    if (action === 'sell') {
+                        suggestedPrice = company.price * 1.15; // 15% above
+                    } else if (action === 'cover') {
+                        suggestedPrice = company.price * 0.85; // 15% below
+                    }
+                }
+
+                elements.limitPriceInput.value = suggestedPrice.toFixed(2);
+            }
+        }
+        updateOrderPreview();
+    });
+
+    elements.limitPriceInput.addEventListener('input', updateOrderPreview);
+
     // Trade execution buttons
     document.getElementById('btn-execute').addEventListener('click', handleExecuteTrade);
     document.getElementById('btn-next-turn').addEventListener('click', handleNextTurn);
@@ -946,6 +1598,36 @@ function setupEventHandlers() {
     document.getElementById('btn-achievements-close').addEventListener('click', () => {
         document.getElementById('achievements-modal').classList.add('hidden');
     });
+
+    // Stock chart modal
+    document.getElementById('btn-chart-close').addEventListener('click', closeStockChart);
+    document.getElementById('btn-chart-buy').addEventListener('click', () => {
+        if (gameState.chartCompany) {
+            selectCompany(gameState.chartCompany);
+            document.getElementById('btn-buy').click();
+            closeStockChart();
+        }
+    });
+    document.getElementById('btn-chart-short').addEventListener('click', () => {
+        if (gameState.chartCompany) {
+            selectCompany(gameState.chartCompany);
+            document.getElementById('btn-short').click();
+            closeStockChart();
+        }
+    });
+    document.getElementById('btn-chart-options').addEventListener('click', () => {
+        if (gameState.chartCompany) {
+            closeStockChart();
+            showOptionsModal(gameState.chartCompany);
+        }
+    });
+
+    // Options modal
+    document.getElementById('btn-options-close').addEventListener('click', closeOptionsModal);
+    document.getElementById('btn-buy-option').addEventListener('click', handleBuyOption);
+    document.getElementById('option-type-select').addEventListener('change', updateOptionCostPreview);
+    document.getElementById('option-strike-select').addEventListener('change', updateOptionCostPreview);
+    document.getElementById('option-contracts-input').addEventListener('input', updateOptionCostPreview);
 
     // Game over modal
     document.getElementById('btn-play-again').addEventListener('click', () => {
@@ -1053,6 +1735,8 @@ function cacheElements() {
         newsContent: document.getElementById('news-content'),
         companySelect: document.getElementById('company-select'),
         sharesInput: document.getElementById('shares-input'),
+        orderTypeSelect: document.getElementById('order-type-select'),
+        limitPriceInput: document.getElementById('limit-price-input'),
         orderCost: document.getElementById('order-cost'),
         tradeMessage: document.getElementById('trade-message'),
         gameIdDisplay: document.getElementById('game-id-display')

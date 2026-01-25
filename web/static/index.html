@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Capital Markets Game</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- Loading Screen -->
@@ -209,6 +210,19 @@
                             <input type="number" id="shares-input" min="1" value="1" placeholder="Qty">
                         </div>
                         <div class="input-group">
+                            <label for="order-type-select">Order:</label>
+                            <select id="order-type-select">
+                                <option value="market">Market</option>
+                                <option value="limit">Limit</option>
+                                <option value="stop_loss">Stop Loss</option>
+                                <option value="take_profit">Take Profit</option>
+                            </select>
+                        </div>
+                        <div class="input-group limit-price-group hidden">
+                            <label for="limit-price-input">Price:</label>
+                            <input type="number" id="limit-price-input" min="0.01" step="0.01" placeholder="$0.00">
+                        </div>
+                        <div class="input-group">
                             <span class="order-preview">
                                 Est. Cost: <span id="order-cost">$0.00</span>
                             </span>
@@ -220,6 +234,22 @@
                     </div>
                 </div>
                 <div id="trade-message" class="trade-message"></div>
+            </section>
+
+            <!-- Pending Orders Panel -->
+            <section id="pending-orders-section" class="panel orders-panel hidden">
+                <h2 class="panel-title">PENDING ORDERS</h2>
+                <div id="pending-orders-content" class="orders-content">
+                    <p class="empty-message">No pending orders</p>
+                </div>
+            </section>
+
+            <!-- Options Positions Panel -->
+            <section id="options-section" class="panel options-panel hidden">
+                <h2 class="panel-title">OPTIONS POSITIONS</h2>
+                <div id="options-content" class="options-content">
+                    <p class="empty-message">No options positions</p>
+                </div>
             </section>
         </main>
 
@@ -344,6 +374,105 @@
         <div class="achievement-text">
             <div class="achievement-title">Achievement Unlocked!</div>
             <div id="achievement-name" class="achievement-name"></div>
+        </div>
+    </div>
+
+    <!-- Options Chain Modal -->
+    <div id="options-modal" class="modal hidden">
+        <div class="modal-content options-modal-content">
+            <div class="options-header">
+                <h2>OPTIONS CHAIN</h2>
+                <div class="options-company-info">
+                    <span id="options-company-name" class="options-company">Company</span>
+                    <span id="options-current-price" class="options-price">$0.00</span>
+                </div>
+            </div>
+            <div class="options-info-bar">
+                <span>Expiry: 5 turns</span>
+                <span>Contract size: 100 shares</span>
+            </div>
+            <div class="options-chain-container">
+                <div class="options-chain">
+                    <div class="options-column calls-column">
+                        <h3 class="column-title call-title">📈 CALLS</h3>
+                        <div id="calls-list" class="options-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="options-column strikes-column">
+                        <h3 class="column-title">STRIKE</h3>
+                        <div id="strikes-list" class="strikes-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="options-column puts-column">
+                        <h3 class="column-title put-title">📉 PUTS</h3>
+                        <div id="puts-list" class="options-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="options-buy-section">
+                <div class="options-buy-inputs">
+                    <select id="option-type-select">
+                        <option value="call">CALL</option>
+                        <option value="put">PUT</option>
+                    </select>
+                    <span>@</span>
+                    <select id="option-strike-select">
+                        <option value="">Select strike...</option>
+                    </select>
+                    <span>×</span>
+                    <input type="number" id="option-contracts-input" min="1" value="1" placeholder="Contracts">
+                    <span class="option-cost-preview">
+                        Cost: <span id="option-total-cost">$0.00</span>
+                    </span>
+                </div>
+                <button id="btn-buy-option" class="action-btn execute-btn">BUY OPTION</button>
+            </div>
+            <button id="btn-options-close" class="modal-btn">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- Price Chart Modal -->
+    <div id="chart-modal" class="modal hidden">
+        <div class="modal-content chart-modal-content">
+            <div class="chart-header">
+                <h2 id="chart-company-name">Company Name</h2>
+                <div class="chart-info">
+                    <span id="chart-sector" class="chart-sector">Sector</span>
+                    <span id="chart-current-price" class="chart-price">$0.00</span>
+                    <span id="chart-change" class="chart-change">0.00%</span>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="stock-price-chart"></canvas>
+            </div>
+            <div class="chart-stats">
+                <div class="chart-stat">
+                    <span class="chart-stat-label">RSI</span>
+                    <span id="chart-rsi" class="chart-stat-value">50</span>
+                </div>
+                <div class="chart-stat">
+                    <span class="chart-stat-label">Momentum</span>
+                    <span id="chart-momentum" class="chart-stat-value">0%</span>
+                </div>
+                <div class="chart-stat">
+                    <span class="chart-stat-label">Beta</span>
+                    <span id="chart-beta" class="chart-stat-value">1.00</span>
+                </div>
+                <div class="chart-stat">
+                    <span class="chart-stat-label">Volume</span>
+                    <span id="chart-volume" class="chart-stat-value">1.00</span>
+                </div>
+            </div>
+            <div class="chart-actions">
+                <button id="btn-chart-buy" class="chart-action-btn buy">BUY</button>
+                <button id="btn-chart-short" class="chart-action-btn short">SHORT</button>
+                <button id="btn-chart-options" class="chart-action-btn options">OPTIONS</button>
+                <button id="btn-chart-close" class="modal-btn">CLOSE</button>
+            </div>
         </div>
     </div>
 

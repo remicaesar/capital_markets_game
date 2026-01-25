@@ -87,7 +87,9 @@ class GameManager:
                 "momentum": round(company.momentum_score * 100, 2),
                 "volume": round(company.volume_history[-1] if company.volume_history else 1.0, 2),
                 "trend": company.get_trend_indicator(),
-                "beta": round(company.beta, 2)
+                "beta": round(company.beta, 2),
+                "price_history": [round(p, 2) for p in company.price_history],
+                "volume_history": [round(v, 2) for v in company.volume_history]
             })
 
         # Build portfolio positions
@@ -130,6 +132,8 @@ class GameManager:
             "portfolio_value": round(player.portfolio_value(market), 2),
             "short_value": round(player.short_position_value(market), 2),
             "short_pnl": round(player.short_position_pnl(market), 2),
+            "options_value": round(player.options_value(market), 2),
+            "options_pnl": round(player.options_pnl_realized, 2),
             "net_worth": round(player.net_worth(market), 2),
             "total_return_pct": round(player.total_return_pct(market), 2),
             "sharpe_ratio": round(player.calculate_sharpe_ratio(), 2),
@@ -151,6 +155,49 @@ class GameManager:
             "sentiment": market.psychology.get_sentiment_emoji()
         }
 
+        # Pending orders
+        pending_orders = []
+        for order in player.pending_orders:
+            company = market.companies.get(order["company"])
+            current_price = company.price if company else 0
+            pending_orders.append({
+                "id": order["id"],
+                "order_type": order["order_type"],
+                "action": order["action"],
+                "company": order["company"],
+                "shares": order["shares"],
+                "limit_price": round(order["limit_price"], 2),
+                "current_price": round(current_price, 2),
+                "created_turn": order["created_turn"],
+                "created_price": round(order["created_price"], 2)
+            })
+
+        # Options positions
+        options_positions = []
+        for option in player.options_positions:
+            company = market.companies.get(option.company)
+            current_price = company.price if company else 0
+            current_value = option.estimate_current_value(current_price, market.turn) if company else 0
+            pnl = option.current_pnl(current_price, market.turn) if company else -option.total_premium_paid()
+
+            options_positions.append({
+                "id": option.id,
+                "type": option.option_type.value,
+                "company": option.company,
+                "strike_price": round(option.strike_price, 2),
+                "premium": round(option.premium, 2),
+                "contracts": option.contracts,
+                "created_turn": option.created_turn,
+                "expiry_turn": option.expiry_turn,
+                "turns_remaining": option.turns_remaining(market.turn),
+                "current_price": round(current_price, 2),
+                "current_value": round(current_value, 2),
+                "intrinsic_value": round(option.intrinsic_value(current_price), 2),
+                "total_premium_paid": round(option.total_premium_paid(), 2),
+                "pnl": round(pnl, 2),
+                "in_the_money": option.is_in_the_money(current_price)
+            })
+
         return {
             "turn": market.turn,
             "max_turns": MAX_TURNS,
@@ -158,6 +205,8 @@ class GameManager:
             "companies": companies,
             "portfolio": portfolio,
             "short_positions": short_positions,
+            "pending_orders": pending_orders,
+            "options_positions": options_positions,
             "player": player_stats,
             "psychology": psychology,
             "news": session.news_history[-5:],  # Last 5 news items
@@ -266,7 +315,17 @@ class GameManager:
             else:
                 news_events = []
 
-            # Add margin call events to news
+            # Process pending orders after price changes
+            order_executions = player.process_pending_orders(market)
+
+            # Process expired options
+            option_events = player.process_expired_options(market)
+
+            # Add all events to news
+            if option_events:
+                news_events = option_events + news_events
+            if order_executions:
+                news_events = order_executions + news_events
             if margin_call_events:
                 news_events = margin_call_events + news_events
 
@@ -372,6 +431,122 @@ class GameManager:
     def get_saves_list(self) -> List[Dict[str, Any]]:
         """Get list of available saves"""
         return list_saves()
+
+    def place_order(self, session: GameSession, order_type: str, action: str,
+                    company_name: str, shares: int, limit_price: float) -> Tuple[bool, str, Dict]:
+        """Place a limit order, stop loss, or take profit order"""
+        market = session.market
+        player = session.player
+
+        # Suppress console output
+        import io
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            return player.place_order(market, order_type, action, company_name, shares, limit_price)
+        finally:
+            sys.stdout = old_stdout
+
+    def cancel_order(self, session: GameSession, order_id: int) -> Tuple[bool, str]:
+        """Cancel a pending order"""
+        # Suppress console output
+        import io
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            return session.player.cancel_order(order_id)
+        finally:
+            sys.stdout = old_stdout
+
+    def buy_option(self, session: GameSession, company_name: str, option_type: str,
+                   strike_price: float, contracts: int) -> Tuple[bool, str, Dict]:
+        """Buy a call or put option"""
+        # Suppress console output
+        import io
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            return session.player.buy_option(
+                session.market, company_name, option_type, strike_price, contracts
+            )
+        finally:
+            sys.stdout = old_stdout
+
+    def exercise_option(self, session: GameSession, option_id: int) -> Tuple[bool, str]:
+        """Exercise an option"""
+        # Suppress console output
+        import io
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            return session.player.exercise_option(session.market, option_id)
+        finally:
+            sys.stdout = old_stdout
+
+    def sell_option(self, session: GameSession, option_id: int) -> Tuple[bool, str]:
+        """Sell an option back to market"""
+        # Suppress console output
+        import io
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            return session.player.sell_option(session.market, option_id)
+        finally:
+            sys.stdout = old_stdout
+
+    def get_option_chain(self, session: GameSession, company_name: str) -> Dict:
+        """Get available options for a company with pricing"""
+        from models.options import options_manager, OptionType
+
+        market = session.market
+        if company_name not in market.companies:
+            return {"error": f"Company '{company_name}' not found"}
+
+        company = market.companies[company_name]
+        strikes = options_manager.get_available_strikes(company)
+
+        chain = {
+            "company": company_name,
+            "current_price": round(company.price, 2),
+            "volatility": round(company.volatility, 4),
+            "calls": [],
+            "puts": []
+        }
+
+        for strike in strikes:
+            # Calculate premiums for 5-turn expiry
+            call_premium = options_manager.calculate_premium(
+                company, strike, OptionType.CALL, 5
+            )
+            put_premium = options_manager.calculate_premium(
+                company, strike, OptionType.PUT, 5
+            )
+
+            chain["calls"].append({
+                "strike": strike,
+                "premium": call_premium,
+                "total_cost": round(call_premium * 100, 2),  # Per contract
+                "itm": company.price > strike
+            })
+
+            chain["puts"].append({
+                "strike": strike,
+                "premium": put_premium,
+                "total_cost": round(put_premium * 100, 2),
+                "itm": company.price < strike
+            })
+
+        return chain
 
 
 # Global game manager instance
