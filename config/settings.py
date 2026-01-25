@@ -4,7 +4,7 @@ Game configuration and constants
 
 # ------------------- CONFIG ------------------- #
 INITIAL_CASH = 10_000
-NUM_COMPANIES = 20
+NUM_COMPANIES = 10
 MAX_TURNS = 50  # Increased for more complex gameplay
 SECTORS = ["Tech", "Energy", "Finance", "Retail", "Healthcare"]
 TRANSACTION_FEE = 0.01

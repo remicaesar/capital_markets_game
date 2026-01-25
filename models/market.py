@@ -86,7 +86,7 @@ class Market:
         return impacts
 
     def advance_turn(self, player):
-        """Complex turn advancement with all systems"""
+        """Turn advancement with clear, understandable events"""
 
         # Track initial market cap
         initial_cap = self.get_market_cap()
@@ -99,84 +99,55 @@ class Market:
         # 2. Process smart money movements (hidden)
         smart_money_impacts = self._process_smart_money()
 
-        # 3. Generate and process news
+        # 3. Generate and process news (simplified: 1-2 clear events)
         displayed_events = []
         sector_impacts = {s: 0.0 for s in SECTORS}
         market_impact = 0.0
 
-        # Generate 3-5 ambiguous news items (increased frequency)
-        num_news = random.randint(3, 5)
-        for _ in range(num_news):
-            headline, interpretations = self.news_system.generate_news()
+        # Generate 1-2 news events with clear effects
+        news_events = self.news_system.generate_turn_news(self.regime.current, self.psychology)
 
-            # Choose interpretation based on probabilities and regime
-            rand = random.random()
-            cumulative = 0.0
-            chosen_interp = None
+        for event in news_events:
+            # Apply the effect directly - no hidden interpretations
+            if event.sector:
+                sector_impacts[event.sector] += event.effect
+            else:
+                market_impact += event.effect
 
-            for interp in interpretations:
-                # Adjust probability based on market psychology
-                adj_prob = interp["prob"]
-                if self.psychology.fear_greed_index < 30 and interp["effect"] < 0:
-                    adj_prob *= 1.3  # Bad news more likely in fearful market
-                elif self.psychology.fear_greed_index > 70 and interp["effect"] > 0:
-                    adj_prob *= 1.3  # Good news more likely in greedy market
+            # Show headline with context so players understand what happened
+            displayed_events.append(f"{event.headline}")
+            displayed_events.append(f"  → {event.context}")
 
-                cumulative += adj_prob
-                if rand < cumulative:
-                    chosen_interp = interp
-                    break
+        # 4. Check for crisis warning (visible to player)
+        warning = self.crisis_system.get_warning(self.regime.current, self.return_history)
+        if warning:
+            displayed_events.append(f"⚠️ WARNING: {warning.message}")
 
-            if not chosen_interp:
-                chosen_interp = interpretations[-1]
-
-            # Apply the interpretation
-            if chosen_interp["delay"] == 0:
-                if chosen_interp["sectors"]:
-                    for sector in chosen_interp["sectors"]:
-                        sector_impacts[sector] += chosen_interp["effect"]
-                else:
-                    market_impact += chosen_interp["effect"]
-
-            # Always add the headline to displayed events
-            displayed_events.append(headline)
-            
-        # Ensure we always have at least one news item
-        if not displayed_events:
-            headline, interpretations = self.news_system.generate_news()
-            displayed_events.append(headline)
-
-        # 4. Check for crisis events
-        crisis = self.crisis_system.check_for_crisis(self.psychology, self.regime.current)
+        # 5. Check for crisis events
+        crisis = self.crisis_system.check_for_crisis(self.regime.current, self.return_history)
         if crisis:
-            displayed_events.insert(0, crisis["headline"])
-            # Apply crisis impact
+            displayed_events.insert(0, f"🚨 {crisis.headline}")
+            displayed_events.insert(1, f"  → {crisis.context}")
+            # Apply crisis impact to all companies
             for company in self.companies.values():
-                impact = random.uniform(crisis["min_impact"], crisis["max_impact"])
-                # Higher beta = more crisis impact
-                impact *= (0.5 + company.beta / 2)
+                impact = crisis.impact * (0.5 + company.beta / 2)
                 sector_impacts[company.sector] += impact
 
-            self.crisis_system.active_crises.append({
-                "crisis": crisis,
-                "remaining_duration": crisis["duration"]
-            })
+        # 6. Process ongoing crisis and check for recovery
+        recovery_msg = self.crisis_system.process_active_crisis()
+        if recovery_msg:
+            displayed_events.append(f"📈 {recovery_msg}")
 
-        # 5. Process ongoing crises
-        for active in self.crisis_system.active_crises[:]:
-            active["remaining_duration"] -= 1
-            if active["remaining_duration"] <= 0:
-                # Crisis ending, partial recovery
-                recovery = active["crisis"]["recovery_rate"]
-                for company in self.companies.values():
-                    sector_impacts[company.sector] += recovery * 0.1
-                self.crisis_system.active_crises.remove(active)
-                displayed_events.append(f"📈 Markets stabilize as {active['crisis']['name']} crisis abates")
+        # Add ongoing crisis impact
+        ongoing_impact = self.crisis_system.get_crisis_impact()
+        if ongoing_impact != 0:
+            market_impact += ongoing_impact
+            displayed_events.append(f"⚠️ Crisis ongoing: market under pressure ({ongoing_impact*100:.1f}%)")
 
-        # 6. Apply sector correlations
+        # 8. Apply sector correlations
         self._apply_sector_correlations(sector_impacts)
 
-        # 7. Update each company
+        # 9. Update each company
         company_changes = {}
         regime_params = self.regime.REGIMES[self.regime.current]
 
@@ -200,39 +171,36 @@ class Market:
                                           self.psychology, self.hidden_factors)
             company_changes[company.name] = change
 
-        # 8. Update market tracking
+        # 10. Update market tracking
         self.market_history.append(self.get_market_cap())
         market_return = self.get_market_return()
         self.return_history.append(market_return)
 
-        # 9. Update psychology
+        # 11. Update psychology
         market_volatility = np.std([c for c in company_changes.values()])
         self.psychology.update(market_return, market_volatility, self.regime.current)
 
-        # 10. Update hidden factors
-        # Rotate smart money positions occasionally
+        # 12. Update hidden factors - rotate smart money positions occasionally
         if random.random() < 0.2:
-            # Remove one position
             if self.hidden_factors.smart_money_positions:
                 to_remove = random.choice(list(self.hidden_factors.smart_money_positions.keys()))
                 del self.hidden_factors.smart_money_positions[to_remove]
 
-            # Add new position
             company = random.choice(list(self.companies.keys()))
             if company not in self.hidden_factors.smart_money_positions:
                 action = "accumulating" if random.random() > 0.5 else "distributing"
                 self.hidden_factors.smart_money_positions[company] = action
 
-        # 11. Return events for display
+        # 13. Add regime change message at top if any
         if regime_msg:
             displayed_events.insert(0, regime_msg)
 
-        # 12. Update difficulty based on player skill
+        # 14. Update difficulty based on player skill
         self._adjust_difficulty(player)
 
         self.turn += 1
-        
-        return displayed_events[:5]  # Return up to 5 news events
+
+        return displayed_events[:8]  # Show more events since we include context
 
     def _adjust_difficulty(self, player):
         """Dynamically adjust difficulty based on player performance"""

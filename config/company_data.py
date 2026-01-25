@@ -6,9 +6,9 @@ from .settings import SECTORS
 
 # ------------ COMPANY NAMES ------------- #
 COMPANY_NAMES = {
-    "Tech": ["TechCore", "DataFlow", "CloudNet", "CyberSys", "QuantumAI"],
-    "Energy": ["PetroMax", "SolarTech", "WindGen", "FuelCorp", "GridPower"],
-    "Finance": ["MegaBank", "InvestCo", "CreditPlus", "CapitalOne", "TradeDesk"],
-    "Retail": ["ShopMart", "TrendStore", "QuickBuy", "MegaMall", "E-Tail"],
-    "Healthcare": ["MediCore", "HealthTech", "PharmaCorp", "BioLabs", "GeneCure"],
+    "Tech": ["TechCore", "QuantumAI"],          # Established vs cutting-edge
+    "Energy": ["PetroMax", "SolarTech"],        # Traditional vs renewable
+    "Finance": ["MegaBank", "TradeDesk"],       # Conservative vs aggressive
+    "Retail": ["ShopMart", "E-Tail"],           # Brick-and-mortar vs online
+    "Healthcare": ["PharmaCorp", "BioLabs"],    # Big pharma vs biotech
 } 

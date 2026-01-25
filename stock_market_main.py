@@ -34,7 +34,7 @@ console = Console()
 
 # ------------------- CONFIG ------------------- #
 INITIAL_CASH = 10_000
-NUM_COMPANIES = 20
+NUM_COMPANIES = 10
 MAX_TURNS = 50  # Increased for more complex gameplay
 SECTORS = ["Tech", "Energy", "Finance", "Retail", "Healthcare"]
 TRANSACTION_FEE = 0.01
@@ -58,11 +58,11 @@ SECTOR_CORRELATIONS = {
 
 # ------------ COMPANY NAMES ------------- #
 COMPANY_NAMES = {
-    "Tech": ["TechCore", "DataFlow", "CloudNet", "CyberSys", "QuantumAI"],
-    "Energy": ["PetroMax", "SolarTech", "WindGen", "FuelCorp", "GridPower"],
-    "Finance": ["MegaBank", "InvestCo", "CreditPlus", "CapitalOne", "TradeDesk"],
-    "Retail": ["ShopMart", "TrendStore", "QuickBuy", "MegaMall", "E-Tail"],
-    "Healthcare": ["MediCore", "HealthTech", "PharmaCorp", "BioLabs", "GeneCure"],
+    "Tech": ["TechCore", "QuantumAI"],          # Established vs cutting-edge
+    "Energy": ["PetroMax", "SolarTech"],        # Traditional vs renewable
+    "Finance": ["MegaBank", "TradeDesk"],       # Conservative vs aggressive
+    "Retail": ["ShopMart", "E-Tail"],           # Brick-and-mortar vs online
+    "Healthcare": ["PharmaCorp", "BioLabs"],    # Big pharma vs biotech
 }
 
 
@@ -278,129 +278,210 @@ class AlgorithmicTraders:
         return 100 - (100 / (1 + rs))
 
 
-# ====================== ADVANCED NEWS SYSTEM ====================== #
+# ====================== SIMPLIFIED NEWS SYSTEM ====================== #
+@dataclass
+class NewsEvent:
+    """A single news event with clear, predictable effects"""
+    headline: str
+    effect: float  # Positive = good for stocks, negative = bad
+    sector: Optional[str] = None  # None = affects whole market
+    context: str = ""  # Explains the impact to players
+
+
 class AdvancedNewsSystem:
-    """Generates ambiguous news with multiple interpretations"""
+    """Generates clear news events that players can learn from"""
 
-    AMBIGUOUS_NEWS_TEMPLATES = [
-        {
-            "headline": "📊 Fed signals '{policy}' approach to monetary policy",
-            "interpretations": [
-                {"effect": 0.05, "prob": 0.3, "sectors": ["Finance"], "delay": 0},
-                {"effect": -0.04, "prob": 0.3, "sectors": ["Tech"], "delay": 1},
-                {"effect": 0.0, "prob": 0.4, "sectors": None, "delay": 0}
-            ]
-        },
-        {
-            "headline": "🏛️ New regulations '{impact}' for {sector} sector",
-            "interpretations": [
-                {"effect": -0.06, "prob": 0.4, "sectors": ["{sector}"], "delay": 0},
-                {"effect": 0.04, "prob": 0.3, "sectors": ["{sector}"], "delay": 2},  # Moat building
-                {"effect": 0.02, "prob": 0.3, "sectors": ["Finance"], "delay": 1}
-            ]
-        },
-        {
-            "headline": "🌍 {region} markets show '{signal}' signals",
-            "interpretations": [
-                {"effect": 0.06, "prob": 0.25, "sectors": ["Energy", "Retail"], "delay": 0},
-                {"effect": -0.05, "prob": 0.25, "sectors": ["Energy", "Retail"], "delay": 0},
-                {"effect": 0.03, "prob": 0.25, "sectors": ["Finance"], "delay": 1},
-                {"effect": -0.02, "prob": 0.25, "sectors": ["Tech"], "delay": 1}
-            ]
-        },
-        {
-            "headline": "💼 Major {sector} company reports '{result}' earnings",
-            "interpretations": [
-                {"effect": 0.08, "prob": 0.2, "sectors": ["{sector}"], "delay": 0},
-                {"effect": 0.02, "prob": 0.3, "sectors": ["{sector}"], "delay": 0},
-                {"effect": -0.04, "prob": 0.3, "sectors": ["{sector}"], "delay": 1},  # Sell the news
-                {"effect": 0.0, "prob": 0.2, "sectors": None, "delay": 0}
-            ]
-        }
+    POSITIVE_SECTOR_NEWS = {
+        "Tech": [
+            ("TechCore announces breakthrough AI chip", 0.06, "New technology drives investor optimism"),
+            ("QuantumAI wins major government contract", 0.05, "Secured revenue boosts sector confidence"),
+            ("Tech sector sees record consumer spending", 0.04, "Strong demand signals healthy growth"),
+        ],
+        "Energy": [
+            ("Oil prices surge on supply concerns", 0.06, "Higher oil prices benefit energy producers"),
+            ("SolarTech receives renewable energy subsidies", 0.05, "Government support improves profit outlook"),
+            ("Cold weather forecast boosts energy demand", 0.04, "Increased consumption means higher revenues"),
+        ],
+        "Finance": [
+            ("Fed signals interest rate stability", 0.05, "Stable rates support bank lending margins"),
+            ("MegaBank reports strong loan growth", 0.06, "Healthy lending indicates economic strength"),
+            ("Credit markets show improved liquidity", 0.04, "Easier borrowing conditions help financials"),
+        ],
+        "Retail": [
+            ("Holiday shopping season exceeds expectations", 0.06, "Consumer spending drives retail profits"),
+            ("E-Tail expands same-day delivery nationwide", 0.05, "Service improvements attract more customers"),
+            ("Consumer confidence hits 12-month high", 0.04, "Optimistic consumers spend more freely"),
+        ],
+        "Healthcare": [
+            ("PharmaCorp drug receives FDA approval", 0.07, "New drug opens significant revenue stream"),
+            ("BioLabs clinical trial shows positive results", 0.06, "Promising data raises acquisition interest"),
+            ("Healthcare spending bill passes Congress", 0.05, "Increased funding benefits entire sector"),
+        ],
+    }
+
+    NEGATIVE_SECTOR_NEWS = {
+        "Tech": [
+            ("Major data breach reported at tech firm", -0.06, "Security concerns trigger selloff"),
+            ("Antitrust investigation announced", -0.05, "Regulatory scrutiny weighs on valuations"),
+            ("Chip shortage disrupts production", -0.04, "Supply issues hurt near-term earnings"),
+        ],
+        "Energy": [
+            ("Oil prices drop on oversupply fears", -0.06, "Lower prices squeeze producer margins"),
+            ("Renewable subsidy cuts announced", -0.05, "Reduced support impacts profitability"),
+            ("Mild weather reduces heating demand", -0.04, "Lower consumption hurts revenues"),
+        ],
+        "Finance": [
+            ("Fed hints at aggressive rate hikes", -0.06, "Rising rates may slow loan demand"),
+            ("Major bank reports loan defaults rising", -0.05, "Credit quality concerns spread to sector"),
+            ("Banking regulations to tighten", -0.04, "New rules may reduce profit margins"),
+        ],
+        "Retail": [
+            ("Consumer spending drops unexpectedly", -0.06, "Weak demand signals trouble ahead"),
+            ("Shipping costs surge on fuel prices", -0.05, "Higher costs eat into profit margins"),
+            ("Retail theft reaches record levels", -0.04, "Shrinkage hurts store profitability"),
+        ],
+        "Healthcare": [
+            ("Drug pricing legislation advances", -0.06, "Price caps threaten pharma revenues"),
+            ("Clinical trial fails to meet endpoints", -0.07, "Failed trial eliminates expected revenue"),
+            ("Medicare reimbursement cuts proposed", -0.05, "Lower payments reduce sector income"),
+        ],
+    }
+
+    MARKET_WIDE_NEWS = [
+        ("Economic growth exceeds expectations", 0.04, "Strong GDP lifts all sectors"),
+        ("Inflation data comes in lower than expected", 0.03, "Easing inflation supports stock valuations"),
+        ("Trade deal reached with major partner", 0.04, "Reduced tariffs benefit exporters"),
+        ("Unemployment drops to multi-year low", 0.03, "Strong job market boosts consumer spending"),
+        ("Recession fears grow on weak data", -0.05, "Economic slowdown concerns trigger selling"),
+        ("Inflation spikes above forecasts", -0.04, "Rising prices may force rate hikes"),
+        ("Geopolitical tensions escalate", -0.04, "Uncertainty drives investors to safety"),
+        ("Major hedge fund liquidates positions", -0.03, "Forced selling pressures prices"),
     ]
 
-    def generate_news(self) -> Tuple[str, List[Dict]]:
-        """Generate ambiguous news event"""
-        template = random.choice(self.AMBIGUOUS_NEWS_TEMPLATES)
+    def generate_news(self) -> NewsEvent:
+        """Generate a single clear news event with context"""
+        if random.random() < 0.6:
+            sector = random.choice(SECTORS)
+            if random.random() < 0.5:
+                headline, effect, context = random.choice(self.POSITIVE_SECTOR_NEWS[sector])
+                icon = "📈"
+            else:
+                headline, effect, context = random.choice(self.NEGATIVE_SECTOR_NEWS[sector])
+                icon = "📉"
+            return NewsEvent(
+                headline=f"{icon} {headline}",
+                effect=effect,
+                sector=sector,
+                context=f"{context} ({sector} sector {'+' if effect > 0 else ''}{effect*100:.0f}%)"
+            )
+        else:
+            headline, effect, context = random.choice(self.MARKET_WIDE_NEWS)
+            icon = "📈" if effect > 0 else "📉"
+            return NewsEvent(
+                headline=f"{icon} {headline}",
+                effect=effect,
+                sector=None,
+                context=f"{context} (Market {'+' if effect > 0 else ''}{effect*100:.0f}%)"
+            )
 
-        # Fill in placeholders
-        placeholders = {
-            "policy": random.choice(["hawkish", "dovish", "data-dependent", "flexible"]),
-            "impact": random.choice(["challenging", "transformative", "mixed implications", "uncertain"]),
-            "sector": random.choice(SECTORS),
-            "region": random.choice(["Asian", "European", "Emerging", "Developed"]),
-            "signal": random.choice(["mixed", "concerning", "improving", "divergent"]),
-            "result": random.choice(["surprising", "mixed", "above-consensus", "complex"])
-        }
-
-        headline = template["headline"]
-        for key, value in placeholders.items():
-            headline = headline.replace(f"{{{key}}}", value)
-
-        # Process interpretations
-        interpretations = []
-        for interp in template["interpretations"]:
-            processed = interp.copy()
-            if processed["sectors"] and "{sector}" in processed["sectors"][0]:
-                processed["sectors"] = [placeholders["sector"]]
-            interpretations.append(processed)
-
-        return headline, interpretations
+    def generate_turn_news(self, regime: str, psychology) -> list:
+        """Generate 1-2 news events for the turn"""
+        events = [self.generate_news()]
+        if random.random() < 0.4:
+            events.append(self.generate_news())
+        return events
 
 
-# ====================== CRISIS EVENTS ====================== #
+# ====================== SIMPLIFIED CRISIS EVENTS ====================== #
+@dataclass
+class CrisisWarning:
+    """Warning sign that a crisis may be coming"""
+    message: str
+    severity: int  # 1-3, higher = more likely crisis
+
+
+@dataclass
+class Crisis:
+    """An active market crisis"""
+    name: str
+    headline: str
+    impact: float
+    duration: int
+    context: str
+
+
 class CrisisEventSystem:
-    """Manages rare but impactful crisis events"""
-
-    CRISIS_EVENTS = [
-        {
-            "name": "flash_crash",
-            "headline": "⚡ FLASH CRASH: Algorithmic cascade triggers market meltdown!",
-            "min_impact": -0.15,
-            "max_impact": -0.35,
-            "duration": 1,
-            "recovery_rate": 0.4,
-            "trigger_condition": lambda psych, regime: psych.complacency > 0.7 and regime == "bull"
-        },
-        {
-            "name": "liquidity_crisis",
-            "headline": "💸 LIQUIDITY CRISIS: Credit markets freeze as counterparty risk soars!",
-            "min_impact": -0.10,
-            "max_impact": -0.25,
-            "duration": 3,
-            "recovery_rate": 0.15,
-            "trigger_condition": lambda psych, regime: psych.fear_greed_index < 20 and regime == "bear"
-        },
-        {
-            "name": "sector_scandal",
-            "headline": "🚨 SCANDAL: Major fraud discovered in {sector} sector!",
-            "min_impact": -0.20,
-            "max_impact": -0.40,
-            "duration": 5,
-            "recovery_rate": 0.1,
-            "trigger_condition": lambda psych, regime: random.random() < 0.1  # Random
-        },
-        {
-            "name": "geopolitical_shock",
-            "headline": "🌐 GEOPOLITICAL CRISIS: Global uncertainty spikes on international tensions!",
-            "min_impact": -0.08,
-            "max_impact": -0.20,
-            "duration": 2,
-            "recovery_rate": 0.25,
-            "trigger_condition": lambda psych, regime: regime == "volatile"
-        }
-    ]
+    """Manages crisis events with visible buildup"""
 
     def __init__(self):
-        self.active_crises = []
-        self.crisis_history = []
+        self.active_crisis: Optional[Crisis] = None
+        self.warning_level: int = 0
+        self.turns_since_crisis: int = 0
+        self.crisis_history: List[str] = []
+        self.active_crises = []  # Legacy compatibility
 
-    def check_for_crisis(self, psychology: MarketPsychology, regime: str) -> Optional[Dict]:
-        """Check if a crisis should trigger"""
-        for crisis in self.CRISIS_EVENTS:
-            if crisis["trigger_condition"](psychology, regime) and random.random() < BASE_CRISIS_PROBABILITY:
-                return crisis
+    def get_warning(self, regime: str, recent_returns: List[float]) -> Optional[CrisisWarning]:
+        """Check for warning signs - visible to players"""
+        if self.active_crisis or self.turns_since_crisis < 5:
+            return None
+        warnings = []
+        if regime == "bull" and self.turns_since_crisis > 15:
+            warnings.append(CrisisWarning("Market complacency rising - extended bull run increases correction risk", 1))
+        if regime == "volatile":
+            warnings.append(CrisisWarning("Elevated volatility signals unstable conditions", 2))
+        if len(recent_returns) >= 3 and sum(recent_returns[-3:]) / 3 < -0.03:
+            warnings.append(CrisisWarning("Sustained losses may trigger panic selling", 2))
+        if warnings:
+            warning = max(warnings, key=lambda w: w.severity)
+            self.warning_level = min(3, self.warning_level + warning.severity)
+            return warning
+        self.warning_level = max(0, self.warning_level - 1)
         return None
+
+    def check_for_crisis(self, psychology_or_regime, regime_or_returns=None) -> Optional[Crisis]:
+        """Check if a crisis triggers"""
+        # Handle both old and new signatures
+        if isinstance(psychology_or_regime, str):
+            regime = psychology_or_regime
+            recent_returns = regime_or_returns if regime_or_returns else []
+        else:
+            regime = regime_or_returns if regime_or_returns else "sideways"
+            recent_returns = []
+
+        self.turns_since_crisis += 1
+        if self.active_crisis or self.warning_level < 2:
+            return None
+        crisis_prob = 0.05 * self.warning_level
+        if random.random() > crisis_prob:
+            return None
+
+        if regime == "volatile" or (len(recent_returns) >= 3 and sum(recent_returns[-3:]) / 3 < -0.02):
+            crisis = Crisis("market_crash", "MARKET CRASH: Panic selling triggers broad market decline!",
+                          random.uniform(-0.12, -0.20), 2, "Widespread fear causes investors to liquidate positions")
+        else:
+            crisis = Crisis("flash_correction", "FLASH CORRECTION: Sudden selloff catches traders off guard!",
+                          random.uniform(-0.08, -0.15), 1, "Algorithmic trading amplifies the downturn")
+
+        self.active_crisis = crisis
+        self.warning_level = 0
+        self.turns_since_crisis = 0
+        self.crisis_history.append(crisis.name)
+        return crisis
+
+    def process_active_crisis(self) -> Optional[str]:
+        """Process ongoing crisis, return recovery message if crisis ends"""
+        if not self.active_crisis:
+            return None
+        self.active_crisis.duration -= 1
+        if self.active_crisis.duration <= 0:
+            recovery_msg = f"Markets stabilize as {self.active_crisis.name.replace('_', ' ')} subsides"
+            self.active_crisis = None
+            return recovery_msg
+        return None
+
+    def get_crisis_impact(self) -> float:
+        """Get the ongoing impact of active crisis"""
+        return self.active_crisis.impact * 0.5 if self.active_crisis else 0.0
 
 
 # ====================== ENHANCED COMPANY ====================== #
@@ -416,18 +497,57 @@ class Company:
     price_history: List[float] = field(default_factory=list)
     volume_history: List[float] = field(default_factory=list)
 
-    # Advanced metrics
+    # Valuation metrics (visible to players)
+    pe_ratio: float = field(default_factory=lambda: random.uniform(8, 35))
+    growth_rate: float = field(default_factory=lambda: random.uniform(-0.02, 0.15))
+    debt_level: str = field(default_factory=lambda: random.choice(["Low", "Medium", "High"]))
+    earnings_per_share: float = 0.0
+
+    # Technical metrics
     momentum_score: float = 0.0
     relative_strength: float = 50.0
     earnings_momentum: float = 0.0
 
     def __post_init__(self):
         self.price_history.append(self.price)
-        self.volume_history.append(1.0)  # Normalized volume
+        self.volume_history.append(1.0)
+        self.earnings_per_share = self.price / self.pe_ratio
+        self._apply_sector_characteristics()
+
+    def _apply_sector_characteristics(self):
+        """Adjust valuation metrics based on sector norms"""
+        sector_profiles = {
+            "Tech": {"pe_range": (15, 40), "growth_range": (0.05, 0.20), "debt_weights": [0.5, 0.35, 0.15]},
+            "Energy": {"pe_range": (8, 20), "growth_range": (-0.05, 0.08), "debt_weights": [0.2, 0.4, 0.4]},
+            "Finance": {"pe_range": (8, 18), "growth_range": (0.0, 0.10), "debt_weights": [0.3, 0.4, 0.3]},
+            "Retail": {"pe_range": (10, 25), "growth_range": (-0.02, 0.12), "debt_weights": [0.3, 0.4, 0.3]},
+            "Healthcare": {"pe_range": (12, 35), "growth_range": (0.03, 0.18), "debt_weights": [0.4, 0.4, 0.2]},
+        }
+        if self.sector in sector_profiles:
+            profile = sector_profiles[self.sector]
+            self.pe_ratio = round(random.uniform(*profile["pe_range"]), 1)
+            self.growth_rate = round(random.uniform(*profile["growth_range"]), 3)
+            self.debt_level = random.choices(["Low", "Medium", "High"], weights=profile["debt_weights"])[0]
+            self.earnings_per_share = round(self.price / self.pe_ratio, 2)
+
+    def get_debt_multiplier(self) -> float:
+        """Returns crisis sensitivity multiplier based on debt level"""
+        return {"Low": 0.8, "Medium": 1.0, "High": 1.4}[self.debt_level]
+
+    def get_valuation_status(self) -> str:
+        """Returns whether stock appears undervalued, fair, or overvalued"""
+        if self.growth_rate <= 0:
+            return "Overvalued" if self.pe_ratio > 20 else "Fair"
+        peg = self.pe_ratio / (self.growth_rate * 100)
+        if peg < 1.0:
+            return "Undervalued"
+        elif peg > 2.0:
+            return "Overvalued"
+        return "Fair"
 
     def update_price(self, base_change: float, regime_mult: Dict, algo_pressure: float,
                      psychology: MarketPsychology, hidden_factors: HiddenFactors):
-        """Advanced price update with all factors"""
+        """Advanced price update with valuation metrics"""
 
         # 1. Apply regime effects
         change = base_change * regime_mult["news_sensitivity"]
@@ -436,39 +556,52 @@ class Company:
         # 2. Add algorithmic trading pressure
         change += algo_pressure
 
-        # 3. Psychology effects
-        psych_multiplier = 1.0
-        if psychology.fear_greed_index > 80:  # Extreme greed
-            psych_multiplier = 1.3 if change > 0 else 0.7
-        elif psychology.fear_greed_index < 20:  # Extreme fear
-            psych_multiplier = 0.7 if change > 0 else 1.5
+        # 3. Growth rate provides baseline drift
+        growth_per_turn = self.growth_rate / 50
+        change += growth_per_turn
 
+        # 4. Psychology effects
+        psych_multiplier = 1.0
+        if psychology.fear_greed_index > 80:
+            psych_multiplier = 1.3 if change > 0 else 0.7
+        elif psychology.fear_greed_index < 20:
+            psych_multiplier = 0.7 if change > 0 else 1.5
         change *= psych_multiplier
 
-        # 4. Hidden value reversion (weak force)
+        # 5. Debt level affects downside
+        if change < 0:
+            change *= self.get_debt_multiplier()
+
+        # 6. Hidden value reversion
         if self.name in hidden_factors.true_values:
             true_value = hidden_factors.true_values[self.name]
             value_gap = (true_value - self.price) / self.price
             reversion_force = value_gap * regime_mult["mean_reversion"] * 0.02
             change += reversion_force
 
-        # 5. Volatility and randomness
+        # 7. Volatility and randomness
         random_shock = random.gauss(0, self.volatility * regime_mult["volatility_mult"])
         change += random_shock
 
-        # 6. Herd behavior at high strength
+        # 8. Herd behavior
         if psychology.herd_strength > 0.7:
             change *= (1 + psychology.herd_strength - 0.7)
 
-        # 7. Apply the change
+        # 9. Apply the change
         self.price = max(1, round(self.price * (1 + change), 2))
         self.price_history.append(self.price)
 
-        # 8. Update volume (spikes on big moves)
+        # 10. Update P/E ratio as price changes
+        self.earnings_per_share *= (1 + growth_per_turn)
+        if self.earnings_per_share > 0:
+            self.pe_ratio = round(self.price / self.earnings_per_share, 1)
+            self.pe_ratio = max(3, min(100, self.pe_ratio))
+
+        # 11. Update volume
         volume = 1.0 + abs(change) * 10
         self.volume_history.append(volume)
 
-        # 9. Update derived metrics
+        # 12. Update derived metrics
         self._update_metrics()
 
         return change
@@ -476,12 +609,10 @@ class Company:
     def _update_metrics(self):
         """Update technical indicators"""
         if len(self.price_history) >= 10:
-            # Momentum score
             short_ma = np.mean(self.price_history[-5:])
             long_ma = np.mean(self.price_history[-10:])
             self.momentum_score = (short_ma - long_ma) / long_ma
 
-            # Relative strength
             gains = []
             losses = []
             for i in range(len(self.price_history) - 9, len(self.price_history)):
@@ -743,10 +874,7 @@ class Market:
         return impacts
 
     def advance_turn(self, player: Player):
-        """Complex turn advancement with all systems"""
-
-        # Track initial market cap
-        initial_cap = self.get_market_cap()
+        """Turn advancement with clear, understandable events"""
 
         # 1. Check for regime change
         regime_msg = self.regime.check_regime_change(self.return_history,
@@ -756,132 +884,100 @@ class Market:
         # 2. Process smart money movements (hidden)
         smart_money_impacts = self._process_smart_money()
 
-        # 3. Generate and process news
+        # 3. Generate and process news (simplified: 1-2 clear events)
         displayed_events = []
         sector_impacts = {s: 0.0 for s in SECTORS}
         market_impact = 0.0
 
-        # Generate 1-3 ambiguous news items
-        num_news = random.randint(1, 3)
-        for _ in range(num_news):
-            headline, interpretations = self.news_system.generate_news()
+        news_events = self.news_system.generate_turn_news(self.regime.current, self.psychology)
 
-            # Choose interpretation based on probabilities and regime
-            rand = random.random()
-            cumulative = 0.0
-            chosen_interp = None
+        for event in news_events:
+            # Apply the effect directly - no hidden interpretations
+            if event.sector:
+                sector_impacts[event.sector] += event.effect
+            else:
+                market_impact += event.effect
 
-            for interp in interpretations:
-                # Adjust probability based on market psychology
-                adj_prob = interp["prob"]
-                if self.psychology.fear_greed_index < 30 and interp["effect"] < 0:
-                    adj_prob *= 1.3  # Bad news more likely in fearful market
-                elif self.psychology.fear_greed_index > 70 and interp["effect"] > 0:
-                    adj_prob *= 1.3  # Good news more likely in greedy market
+            # Show headline with context so players understand what happened
+            displayed_events.append(f"{event.headline}")
+            displayed_events.append(f"  → {event.context}")
 
-                cumulative += adj_prob
-                if rand < cumulative:
-                    chosen_interp = interp
-                    break
+        # 4. Check for crisis warning (visible to player)
+        warning = self.crisis_system.get_warning(self.regime.current, self.return_history)
+        if warning:
+            displayed_events.append(f"⚠️ WARNING: {warning.message}")
 
-            if not chosen_interp:
-                chosen_interp = interpretations[-1]
-
-            # Apply the interpretation
-            if chosen_interp["delay"] == 0:
-                if chosen_interp["sectors"]:
-                    for sector in chosen_interp["sectors"]:
-                        sector_impacts[sector] += chosen_interp["effect"]
-                else:
-                    market_impact += chosen_interp["effect"]
-
-            displayed_events.append(headline)
-
-        # 4. Check for crisis events
-        crisis = self.crisis_system.check_for_crisis(self.psychology, self.regime.current)
+        # 5. Check for crisis events
+        crisis = self.crisis_system.check_for_crisis(self.regime.current, self.return_history)
         if crisis:
-            displayed_events.insert(0, crisis["headline"])
-            # Apply crisis impact
+            displayed_events.insert(0, f"🚨 {crisis.headline}")
+            displayed_events.insert(1, f"  → {crisis.context}")
             for company in self.companies.values():
-                impact = random.uniform(crisis["min_impact"], crisis["max_impact"])
-                # Higher beta = more crisis impact
-                impact *= (0.5 + company.beta / 2)
+                impact = crisis.impact * (0.5 + company.beta / 2)
                 sector_impacts[company.sector] += impact
 
-            self.crisis_system.active_crises.append({
-                "crisis": crisis,
-                "remaining_duration": crisis["duration"]
-            })
+        # 6. Process ongoing crisis and check for recovery
+        recovery_msg = self.crisis_system.process_active_crisis()
+        if recovery_msg:
+            displayed_events.append(f"📈 {recovery_msg}")
 
-        # 5. Process ongoing crises
-        for active in self.crisis_system.active_crises[:]:
-            active["remaining_duration"] -= 1
-            if active["remaining_duration"] <= 0:
-                # Crisis ending, partial recovery
-                recovery = active["crisis"]["recovery_rate"]
-                for company in self.companies.values():
-                    sector_impacts[company.sector] += recovery * 0.1
-                self.crisis_system.active_crises.remove(active)
-                displayed_events.append(f"📈 Markets stabilize as {active['crisis']['name']} crisis abates")
+        # Add ongoing crisis impact
+        ongoing_impact = self.crisis_system.get_crisis_impact()
+        if ongoing_impact != 0:
+            market_impact += ongoing_impact
+            displayed_events.append(f"⚠️ Crisis ongoing: market under pressure ({ongoing_impact*100:.1f}%)")
 
-        # 6. Apply sector correlations
+        # 7. Apply sector correlations
         self._apply_sector_correlations(sector_impacts)
 
-        # 7. Update each company
+        # 8. Update each company
         company_changes = {}
         regime_params = self.regime.REGIMES[self.regime.current]
 
         for company in self.companies.values():
-            # Get algorithmic trading pressure
             market_data = {
                 "true_values": self.hidden_factors.true_values,
                 "regime": self.regime.current
             }
             algo_pressure = self.algos.get_pressure(company, market_data)
 
-            # Smart money impact (if any)
             if company.name in smart_money_impacts:
                 algo_pressure += smart_money_impacts[company.name]
 
-            # Base change from news and sector
             base_change = sector_impacts.get(company.sector, 0) + market_impact
 
-            # Update price with all factors
             change = company.update_price(base_change, regime_params, algo_pressure,
                                           self.psychology, self.hidden_factors)
             company_changes[company.name] = change
 
-        # 8. Update market tracking
+        # 9. Update market tracking
         self.market_history.append(self.get_market_cap())
         market_return = self.get_market_return()
         self.return_history.append(market_return)
 
-        # 9. Update psychology
+        # 10. Update psychology
         market_volatility = np.std([c for c in company_changes.values()])
         self.psychology.update(market_return, market_volatility, self.regime.current)
 
-        # 10. Update hidden factors
-        # Rotate smart money positions occasionally
+        # 11. Update hidden factors
         if random.random() < 0.2:
-            # Remove one position
             if self.hidden_factors.smart_money_positions:
                 to_remove = random.choice(list(self.hidden_factors.smart_money_positions.keys()))
                 del self.hidden_factors.smart_money_positions[to_remove]
-
-            # Add new position
             company = random.choice(list(self.companies.keys()))
             if company not in self.hidden_factors.smart_money_positions:
                 action = "accumulating" if random.random() > 0.5 else "distributing"
                 self.hidden_factors.smart_money_positions[company] = action
 
-        # 11. Display events
+        # 12. Add regime change message at top if any
         if regime_msg:
             displayed_events.insert(0, regime_msg)
 
+        # 13. Display events with context
         if displayed_events:
-            console.print(Panel("\n".join(displayed_events[:5]), title="📰 Market News", style="yellow"))
+            console.print(Panel("\n".join(displayed_events[:8]), title="📰 Market News", style="yellow"))
 
-        # 12. Update difficulty based on player skill
+        # 14. Update difficulty based on player skill
         self._adjust_difficulty(player)
 
         self.turn += 1
@@ -899,7 +995,7 @@ class Market:
         # More skilled players face more crises
 
     def market_table(self, player: Player) -> Table:
-        """Enhanced market display with advanced metrics"""
+        """Enhanced market display with valuation metrics"""
         progress = (self.turn - 1) / MAX_TURNS
         progress_bar = "█" * int(progress * 20) + "░" * (20 - int(progress * 20))
 
@@ -912,10 +1008,10 @@ class Market:
         tbl.add_column("Sector", style="dim", min_width=8)
         tbl.add_column("Price", justify="right", min_width=8)
         tbl.add_column("Change", justify="right", min_width=8)
-        tbl.add_column("Trend", justify="center", min_width=6)
-        tbl.add_column("Vol", justify="right", min_width=6)
-        tbl.add_column("RSI", justify="right", min_width=5)
-        tbl.add_column("Momentum", justify="right", min_width=8)
+        tbl.add_column("P/E", justify="right", min_width=6)
+        tbl.add_column("Growth", justify="right", min_width=7)
+        tbl.add_column("Debt", justify="center", min_width=6)
+        tbl.add_column("Value", justify="center", min_width=10)
 
         sorted_companies = sorted(self.companies.values(), key=lambda c: (c.sector, c.name))
         current_sector = None
@@ -930,19 +1026,36 @@ class Market:
             change_text = Text(f"{change_pct:+.1f}%")
             change_text.stylize("green" if change_pct >= 0 else "red")
 
-            trend = c.get_trend_indicator()
-            vol_text = f"{c.volatility * 100:.1f}%"
+            # P/E coloring (lower is generally better)
+            pe_text = Text(f"{c.pe_ratio:.1f}")
+            if c.pe_ratio < 12:
+                pe_text.stylize("green")  # Cheap
+            elif c.pe_ratio > 30:
+                pe_text.stylize("red")  # Expensive
 
-            # RSI coloring
-            rsi_text = Text(f"{c.relative_strength:.0f}")
-            if c.relative_strength > 70:
-                rsi_text.stylize("red")  # Overbought
-            elif c.relative_strength < 30:
-                rsi_text.stylize("green")  # Oversold
+            # Growth coloring
+            growth_text = Text(f"{c.growth_rate * 100:+.1f}%")
+            if c.growth_rate > 0.10:
+                growth_text.stylize("green bold")  # High growth
+            elif c.growth_rate > 0:
+                growth_text.stylize("green")
+            else:
+                growth_text.stylize("red")  # Negative growth
 
-            # Momentum indicator
-            mom_text = Text(f"{c.momentum_score * 100:+.1f}%")
-            mom_text.stylize("green" if c.momentum_score > 0 else "red")
+            # Debt coloring
+            debt_text = Text(c.debt_level)
+            if c.debt_level == "Low":
+                debt_text.stylize("green")
+            elif c.debt_level == "High":
+                debt_text.stylize("red")
+
+            # Valuation status
+            val_status = c.get_valuation_status()
+            val_text = Text(val_status)
+            if val_status == "Undervalued":
+                val_text.stylize("green bold")
+            elif val_status == "Overvalued":
+                val_text.stylize("red")
 
             # Highlight owned stocks
             name_style = "bold cyan" if c.name in player.portfolio else ""
@@ -956,10 +1069,10 @@ class Market:
                 c.sector,
                 f"${c.price:.2f}",
                 change_text,
-                trend,
-                vol_text,
-                rsi_text,
-                mom_text
+                pe_text,
+                growth_text,
+                debt_text,
+                val_text,
             )
 
         return tbl
@@ -1103,8 +1216,32 @@ def display_portfolio_analysis(player: Player, market: Market) -> Table:
 
 
 def display_market_analysis(market: Market) -> Panel:
-    """Show hidden market analysis hints"""
+    """Show market analysis hints with valuation insights"""
     hints = []
+
+    # Valuation-based hints
+    undervalued = [c for c in market.companies.values() if c.get_valuation_status() == "Undervalued"]
+    overvalued = [c for c in market.companies.values() if c.get_valuation_status() == "Overvalued"]
+
+    if undervalued:
+        names = ", ".join([c.name for c in undervalued[:3]])
+        hints.append(f"💎 Potentially undervalued: {names}")
+
+    if overvalued:
+        names = ", ".join([c.name for c in overvalued[:3]])
+        hints.append(f"⚠️ Potentially overvalued: {names}")
+
+    # High growth opportunities
+    high_growth = [c for c in market.companies.values() if c.growth_rate > 0.12]
+    if high_growth:
+        names = ", ".join([c.name for c in high_growth])
+        hints.append(f"🚀 High growth stocks: {names}")
+
+    # Risky debt situations
+    high_debt = [c for c in market.companies.values() if c.debt_level == "High"]
+    if high_debt and market.regime.current in ["bear", "volatile"]:
+        names = ", ".join([c.name for c in high_debt])
+        hints.append(f"💸 High debt (risky in this market): {names}")
 
     # Regime hints
     if market.regime.turns_in_regime > 8:
@@ -1112,25 +1249,20 @@ def display_market_analysis(market: Market) -> Panel:
 
     # Psychology hints
     if market.psychology.fear_greed_index > 75:
-        hints.append("🤔 The market seems quite euphoric lately")
+        hints.append("🤔 The market seems quite euphoric - be cautious of high P/E stocks")
     elif market.psychology.fear_greed_index < 25:
-        hints.append("😰 Fear is dominating market sentiment")
+        hints.append("😰 Fear is dominating - undervalued stocks may be opportunities")
 
     # Crisis hints
-    if market.crisis_system.active_crises:
-        hints.append(f"⚠️ {len(market.crisis_system.active_crises)} crisis event(s) still affecting markets")
+    if market.crisis_system.active_crisis:
+        hints.append(f"🚨 Active crisis: {market.crisis_system.active_crisis.name.replace('_', ' ')}")
 
-    # Correlation hints
-    if market.psychology.herd_strength > 0.8:
-        hints.append("🐑 Stocks are moving together more than usual")
-
-    # Volume hints
-    high_volume = [c for c in market.companies.values() if c.volume_history[-1] > 3]
-    if high_volume:
-        hints.append(f"📊 Unusual volume in {len(high_volume)} stocks")
+    # Crisis warning
+    if market.crisis_system.warning_level >= 2:
+        hints.append("⚠️ Market stress building - consider reducing high-debt positions")
 
     if not hints:
-        hints.append("🔍 Markets appear relatively normal... or do they?")
+        hints.append("🔍 Markets appear relatively stable")
 
     return Panel("\n".join(hints), title="🔮 Market Analysis", style="yellow")
 
@@ -1183,7 +1315,7 @@ def main():
    • Hidden forces affect prices
    • Crisis events can strike anytime
 
-📊 Commands: buy, sell, hold, analysis, hints, quit
+📊 Commands: buy, sell, hold, analysis, hints, guide, quit
 💡 Watch for: RSI extremes, momentum shifts, regime changes
 """
 
@@ -1204,7 +1336,7 @@ def main():
         console.print(display_portfolio_analysis(player, market))
 
         # Actions
-        console.print("\n[bold]Actions:[/bold] buy | sell | hold | analysis | hints | quit")
+        console.print("\n[bold]Actions:[/bold] buy | sell | hold | analysis | hints | guide | quit")
         action = input("\n> ").strip().lower()
 
         if action == "buy":
@@ -1265,16 +1397,53 @@ def main():
 
         elif action == "hints":
             hints = [
-                "💡 High RSI (>70) often precedes reversals... but not always",
-                "💡 In bear markets, correlations increase - diversification fails",
-                "💡 Watch for volume spikes - someone knows something",
-                "💡 Regime changes invalidate old strategies",
-                "💡 Smart money moves before news breaks",
-                "💡 Fear and greed extremes mark turning points",
-                "💡 Crisis events favor low-beta defensive stocks",
-                "💡 Some news has delayed effects - patience pays"
+                "💡 Low P/E + High Growth = potentially undervalued opportunity",
+                "💡 High P/E + Negative Growth = danger zone, avoid!",
+                "💡 High debt stocks crash harder during crises - reduce exposure",
+                "💡 Low debt stocks are defensive - good for uncertain markets",
+                "💡 Growth stocks outperform in bull markets",
+                "💡 Value stocks (low P/E) outperform in bear markets",
+                "💡 Watch the 'Value' column - undervalued stocks often rebound",
+                "💡 Crisis warnings appear before crashes - take them seriously",
+                "💡 Sector news affects both companies in that sector",
+                "💡 Diversify across sectors to reduce risk",
             ]
             console.print(Panel(random.choice(hints), title="💡 Trading Wisdom", style="cyan"))
+            input("\nPress Enter to continue...")
+            continue
+
+        elif action == "guide":
+            guide = """
+[bold cyan]📊 VALUATION METRICS GUIDE[/bold cyan]
+
+[bold]P/E Ratio (Price/Earnings)[/bold]
+  • Shows how much you pay for $1 of company profit
+  • [green]Low P/E (<12)[/green] = Cheap, may be undervalued
+  • [red]High P/E (>30)[/red] = Expensive, may be overvalued
+  • Compare within sectors - Tech has higher P/E than Energy
+
+[bold]Growth Rate[/bold]
+  • Annual earnings growth rate
+  • [green]+10% or higher[/green] = High growth, justifies higher P/E
+  • [red]Negative[/red] = Declining company, risky
+
+[bold]Debt Level[/bold]
+  • [green]Low[/green] = Safe, loses less during crises
+  • [yellow]Medium[/yellow] = Average risk
+  • [red]High[/red] = Risky, drops 40% more during downturns
+
+[bold]Value Status[/bold]
+  • [green]Undervalued[/green] = P/E is low relative to growth (buy signal)
+  • Fair = Reasonably priced
+  • [red]Overvalued[/red] = P/E is high relative to growth (sell signal)
+
+[bold cyan]💡 STRATEGY TIPS[/bold cyan]
+  • Bull market: Buy high-growth stocks, accept higher P/E
+  • Bear market: Buy low P/E, low debt defensive stocks
+  • Before crisis: Reduce high-debt positions
+  • After crash: Hunt for undervalued opportunities
+"""
+            console.print(Panel(guide, title="📚 Investor's Guide", style="blue"))
             input("\nPress Enter to continue...")
             continue
 
@@ -1348,6 +1517,3 @@ if __name__ == "__main__":
     except Exception as e:
         console.print(f"\n[red]An error occurred: {e}[/red]")
         console.print("[yellow]Please ensure you have required packages: pip install rich numpy[/yellow]")
-Made
-with
-    2
