@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capital Markets Game</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <h1>CAPITAL MARKETS GAME</h1>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Main Game Container -->
+    <div id="game-container" class="game-container hidden">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="title">CAPITAL MARKETS GAME</h1>
+                <button id="btn-help" class="help-btn" title="Help">?</button>
+            </div>
+            <div class="header-center">
+                <span id="turn-display">Turn <span id="current-turn">1</span>/<span id="max-turns">50</span></span>
+                <div class="progress-bar">
+                    <div id="turn-progress" class="progress-fill"></div>
+                </div>
+            </div>
+            <div class="header-right">
+                <span id="regime-display" class="regime bull">Bull Market</span>
+                <span id="regime-emoji">🐂</span>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Market Panel -->
+            <section class="panel market-panel">
+                <h2 class="panel-title">MARKET</h2>
+                <div class="table-container">
+                    <table class="market-table">
+                        <thead>
+                            <tr>
+                                <th>COMPANY</th>
+                                <th>SECTOR</th>
+                                <th class="tooltip-trigger" data-tooltip="Current stock price in USD">PRICE</th>
+                                <th class="tooltip-trigger" data-tooltip="Price change since last turn (%)">CHG%</th>
+                                <th class="tooltip-trigger" data-tooltip="Relative Strength Index (0-100). Below 30 = oversold (buy signal), Above 70 = overbought (sell signal)">RSI</th>
+                                <th class="tooltip-trigger" data-tooltip="Price momentum over recent turns. Positive = upward trend, Negative = downward trend">MOM%</th>
+                                <th class="tooltip-trigger" data-tooltip="Trading volume. Higher volume = more liquid, easier to trade large positions">VOL</th>
+                                <th class="tooltip-trigger" data-tooltip="Volatility vs market. Beta > 1 = more volatile, Beta < 1 = more stable">BETA</th>
+                                <th class="tooltip-trigger" data-tooltip="Current price trend indicator based on moving averages">TREND</th>
+                            </tr>
+                        </thead>
+                        <tbody id="market-tbody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Lower Panels Container -->
+            <div class="lower-panels">
+                <!-- Portfolio Panel -->
+                <section class="panel portfolio-panel">
+                    <h2 class="panel-title">PORTFOLIO</h2>
+                    <div id="portfolio-content" class="portfolio-content">
+                        <p class="empty-message">No positions</p>
+                    </div>
+                </section>
+
+                <!-- Short Positions Panel -->
+                <section class="panel shorts-panel">
+                    <h2 class="panel-title">SHORT POSITIONS</h2>
+                    <div id="shorts-content" class="shorts-content">
+                        <p class="empty-message">No short positions</p>
+                    </div>
+                </section>
+
+                <!-- Psychology Panel -->
+                <section class="panel psychology-panel">
+                    <h2 class="panel-title">MARKET PSYCHOLOGY</h2>
+                    <div class="psychology-content">
+                        <div class="psychology-item">
+                            <span class="label tooltip-trigger" data-tooltip="Market sentiment (0-100). Low = Fear (potential buying opportunity), High = Greed (potential bubble)">Fear/Greed:</span>
+                            <div class="meter">
+                                <div id="fear-greed-bar" class="meter-fill"></div>
+                            </div>
+                            <span id="fear-greed-value" class="value">50</span>
+                        </div>
+                        <div class="psychology-item">
+                            <span class="label tooltip-trigger" data-tooltip="How much traders are following the crowd. High herd = momentum continues, but reversal risk increases">Herd Level:</span>
+                            <div class="meter">
+                                <div id="herd-bar" class="meter-fill"></div>
+                            </div>
+                            <span id="herd-value" class="value">0%</span>
+                        </div>
+                        <div class="psychology-item">
+                            <span class="label tooltip-trigger" data-tooltip="Market overconfidence. High complacency often precedes sudden corrections">Complacency:</span>
+                            <div class="meter">
+                                <div id="complacency-bar" class="meter-fill"></div>
+                            </div>
+                            <span id="complacency-value" class="value">0%</span>
+                        </div>
+                        <div class="psychology-item">
+                            <span class="label">Sentiment:</span>
+                            <span id="sentiment-emoji" class="sentiment-emoji">😐</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Stats, Graph, News, and Trade History Row -->
+            <div class="stats-news-row four-col">
+                <!-- Stats Panel -->
+                <section class="panel stats-panel">
+                    <h2 class="panel-title">STATS</h2>
+                    <div class="stats-content compact">
+                        <div class="stat-row">
+                            <span class="stat-label">Cash:</span>
+                            <span id="stat-cash" class="stat-value">$10,000.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Portfolio:</span>
+                            <span id="stat-portfolio" class="stat-value">$0.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Net Worth:</span>
+                            <span id="stat-networth" class="stat-value highlight">$10,000.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Return:</span>
+                            <span id="stat-return" class="stat-value">0.00%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Sharpe:</span>
+                            <span id="stat-sharpe" class="stat-value">0.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Drawdown:</span>
+                            <span id="stat-drawdown" class="stat-value">0.00%</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Trades:</span>
+                            <span id="stat-trades" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Fees:</span>
+                            <span id="stat-fees" class="stat-value">$0.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Margin:</span>
+                            <span id="stat-margin" class="stat-value">$5,000.00</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Performance Graph Panel -->
+                <section class="panel graph-panel">
+                    <h2 class="panel-title">PERFORMANCE</h2>
+                    <div class="graph-content">
+                        <canvas id="performance-chart" width="200" height="120"></canvas>
+                        <div class="graph-labels">
+                            <span class="graph-label-start">Turn 1</span>
+                            <span id="graph-label-end" class="graph-label-end">Turn 1</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- News Panel -->
+                <section class="panel news-panel">
+                    <h2 class="panel-title">NEWS</h2>
+                    <div id="news-content" class="news-content">
+                        <p class="empty-message">No news yet. Start a new game!</p>
+                    </div>
+                </section>
+
+                <!-- Trade History Panel -->
+                <section class="panel history-panel">
+                    <h2 class="panel-title">TRADE HISTORY</h2>
+                    <div id="history-content" class="history-content">
+                        <p class="empty-message">No trades yet</p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Trade Panel -->
+            <section class="panel trade-panel">
+                <h2 class="panel-title">TRADE</h2>
+                <div class="trade-content">
+                    <div class="trade-actions">
+                        <button id="btn-buy" class="trade-btn buy-btn active" data-action="buy">BUY</button>
+                        <button id="btn-sell" class="trade-btn sell-btn" data-action="sell">SELL</button>
+                        <button id="btn-short" class="trade-btn short-btn" data-action="short">SHORT</button>
+                        <button id="btn-cover" class="trade-btn cover-btn" data-action="cover">COVER</button>
+                    </div>
+                    <div class="trade-inputs">
+                        <div class="input-group">
+                            <label for="company-select">Company:</label>
+                            <select id="company-select">
+                                <option value="">Select company...</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="shares-input">Shares:</label>
+                            <input type="number" id="shares-input" min="1" value="1" placeholder="Qty">
+                        </div>
+                        <div class="input-group">
+                            <span class="order-preview">
+                                Est. Cost: <span id="order-cost">$0.00</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="trade-buttons">
+                        <button id="btn-execute" class="action-btn execute-btn">EXECUTE TRADE</button>
+                        <button id="btn-next-turn" class="action-btn next-turn-btn">NEXT TURN</button>
+                    </div>
+                </div>
+                <div id="trade-message" class="trade-message"></div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-left">
+                <button id="btn-new-game" class="footer-btn">NEW GAME</button>
+                <button id="btn-save" class="footer-btn">SAVE</button>
+                <button id="btn-load" class="footer-btn">LOAD</button>
+                <button id="btn-achievements" class="footer-btn achievements-btn">🏆 ACHIEVEMENTS</button>
+            </div>
+            <div class="footer-right">
+                <span id="game-id-display" class="game-id">Game ID: --</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="start-screen hidden">
+        <div class="start-content">
+            <h1>CAPITAL MARKETS GAME</h1>
+            <p class="tagline">An ultra-realistic stock market simulation</p>
+            <div class="start-buttons">
+                <button id="btn-start-new" class="start-btn primary">NEW GAME</button>
+                <button id="btn-start-load" class="start-btn secondary">LOAD GAME</button>
+            </div>
+            <div id="saves-list" class="saves-list hidden">
+                <h3>Available Saves</h3>
+                <div id="saves-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="modal hidden">
+        <div class="modal-content game-over-content">
+            <h2>GAME OVER</h2>
+            <div id="final-stats" class="final-stats">
+                <!-- Populated by JavaScript -->
+            </div>
+            <div class="modal-buttons">
+                <button id="btn-play-again" class="modal-btn primary">PLAY AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div id="message-modal" class="modal hidden">
+        <div class="modal-content message-content">
+            <p id="modal-message"></p>
+            <button id="btn-modal-close" class="modal-btn">OK</button>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal hidden">
+        <div class="modal-content help-content">
+            <h2>HOW TO PLAY</h2>
+            <div class="help-sections">
+                <div class="help-section">
+                    <h3>📈 Objective</h3>
+                    <p>Start with $10,000 and maximize your portfolio value over 50 turns. Beat the market return to prove your trading skills!</p>
+                </div>
+                <div class="help-section">
+                    <h3>💹 Trading Actions</h3>
+                    <ul>
+                        <li><strong>BUY</strong> - Purchase shares (go long, profit when price rises)</li>
+                        <li><strong>SELL</strong> - Sell shares you own</li>
+                        <li><strong>SHORT</strong> - Borrow & sell shares (profit when price falls)</li>
+                        <li><strong>COVER</strong> - Buy back shorted shares to close position</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3>📊 Key Indicators</h3>
+                    <ul>
+                        <li><strong>RSI</strong> - Below 30 = oversold (buy signal), Above 70 = overbought (sell signal)</li>
+                        <li><strong>Momentum</strong> - Positive = uptrend, Negative = downtrend</li>
+                        <li><strong>Beta</strong> - &gt;1 = more volatile than market, &lt;1 = more stable</li>
+                        <li><strong>Fear/Greed</strong> - Low = fear (buying opportunity), High = greed (bubble risk)</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3>⚠️ Risks</h3>
+                    <ul>
+                        <li>Transaction fees (1%) apply to all trades</li>
+                        <li>Short positions have borrowing costs and margin calls</li>
+                        <li>Market crashes and crises can happen suddenly</li>
+                        <li>News can be misleading - not all signals are accurate</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3>⌨️ Keyboard Shortcuts</h3>
+                    <ul>
+                        <li><strong>B</strong> - Select Buy</li>
+                        <li><strong>S</strong> - Select Sell</li>
+                        <li><strong>H</strong> - Select Short</li>
+                        <li><strong>C</strong> - Select Cover</li>
+                        <li><strong>Enter</strong> - Execute Trade</li>
+                        <li><strong>Ctrl+Enter</strong> - Next Turn</li>
+                        <li><strong>Ctrl+S</strong> - Save Game</li>
+                    </ul>
+                </div>
+            </div>
+            <button id="btn-help-close" class="modal-btn primary">GOT IT</button>
+        </div>
+    </div>
+
+    <!-- Achievements Modal -->
+    <div id="achievements-modal" class="modal hidden">
+        <div class="modal-content achievements-content">
+            <h2>🏆 ACHIEVEMENTS</h2>
+            <div id="achievements-list" class="achievements-list">
+                <!-- Populated by JavaScript -->
+            </div>
+            <button id="btn-achievements-close" class="modal-btn primary">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- Achievement Notification -->
+    <div id="achievement-notification" class="achievement-notification hidden">
+        <div class="achievement-icon">🏆</div>
+        <div class="achievement-text">
+            <div class="achievement-title">Achievement Unlocked!</div>
+            <div id="achievement-name" class="achievement-name"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
