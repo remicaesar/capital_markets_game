@@ -1219,6 +1219,145 @@ body {
     50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.5); }
 }
 
+/* Tutorial System */
+.tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2000;
+    pointer-events: none;
+}
+
+.tutorial-overlay::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.65);
+    pointer-events: auto;
+}
+
+.tutorial-spotlight {
+    position: absolute;
+    border-radius: 6px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.65);
+    border: 2px solid var(--color-accent);
+    transition: all 0.4s ease;
+    z-index: 2001;
+    pointer-events: none;
+}
+
+.tutorial-tooltip {
+    position: absolute;
+    background: var(--bg-secondary);
+    border: 2px solid var(--color-accent);
+    border-radius: 8px;
+    padding: 20px 24px;
+    max-width: 380px;
+    min-width: 300px;
+    z-index: 2002;
+    pointer-events: auto;
+    animation: tutorialFadeIn 0.3s ease;
+}
+
+@keyframes tutorialFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.tutorial-step-counter {
+    position: absolute;
+    top: -10px;
+    right: 16px;
+    background: var(--color-accent);
+    color: var(--bg-primary);
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.tutorial-title {
+    color: var(--color-accent);
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+}
+
+.tutorial-text {
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.tutorial-text strong {
+    color: var(--color-accent);
+}
+
+.tutorial-text .key {
+    display: inline-block;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: var(--color-highlight);
+}
+
+.tutorial-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tutorial-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+}
+
+.tutorial-btn.skip {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+.tutorial-btn.skip:hover {
+    color: var(--text-secondary);
+    border-color: var(--text-secondary);
+}
+
+.tutorial-btn.next {
+    background: var(--color-accent);
+    color: var(--bg-primary);
+    font-weight: bold;
+}
+
+.tutorial-btn.next:hover {
+    background: #ffaa22;
+}
+
+.tutorial-start-btn {
+    animation: tutorialPulse 2s infinite;
+}
+
+@keyframes tutorialPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 153, 0, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(255, 153, 0, 0); }
+}
+
 /* Responsive Adjustments */
 @media (max-width: 1200px) {
     .lower-panels {
@@ -1249,6 +1388,71 @@ body {
 }
 
 @media (max-width: 768px) {
+    html, body {
+        overflow: auto;
+        height: auto;
+    }
+
+    body {
+        font-size: 12px;
+    }
+
+    .game-container {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .main-content {
+        overflow: visible;
+    }
+
+    /* Header: compact mobile layout */
+    .header {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .header-left .title {
+        font-size: 14px;
+        letter-spacing: 1px;
+    }
+
+    .progress-bar {
+        width: 140px;
+    }
+
+    /* Market table: horizontal scroll, hide less important columns */
+    .market-panel {
+        min-height: auto;
+    }
+
+    .table-container {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .market-table th:nth-child(6),
+    .market-table td:nth-child(6),
+    .market-table th:nth-child(7),
+    .market-table td:nth-child(7),
+    .market-table th:nth-child(8),
+    .market-table td:nth-child(8),
+    .market-table th:nth-child(9),
+    .market-table td:nth-child(9),
+    .market-table th:nth-child(10),
+    .market-table td:nth-child(10),
+    .market-table th:nth-child(11),
+    .market-table td:nth-child(11) {
+        display: none;
+    }
+
+    .market-table th,
+    .market-table td {
+        padding: 10px 8px;
+        font-size: 12px;
+    }
+
+    /* Lower panels: single column */
     .lower-panels {
         grid-template-columns: 1fr;
     }
@@ -1257,39 +1461,227 @@ body {
         grid-column: span 1;
     }
 
+    .portfolio-content,
+    .shorts-content {
+        max-height: 200px;
+    }
+
+    /* Stats/News: single column */
     .stats-news-row,
     .stats-news-row.four-col {
         grid-template-columns: 1fr;
     }
 
-    .header {
-        flex-direction: column;
-        gap: 10px;
+    .news-content,
+    .history-content {
+        max-height: 200px;
     }
 
+    /* Trade panel: mobile-friendly stacked layout */
     .trade-actions {
         flex-wrap: wrap;
         justify-content: center;
     }
 
-    .trade-inputs {
-        flex-direction: column;
+    .trade-btn {
+        padding: 12px 16px;
+        font-size: 13px;
+        flex: 1;
+        min-width: 70px;
+        text-align: center;
     }
 
+    .trade-inputs {
+        flex-direction: column;
+        gap: var(--gap-small);
+    }
+
+    .input-group {
+        width: 100%;
+    }
+
+    .input-group select,
+    .input-group input {
+        flex: 1;
+        padding: 12px;
+        font-size: 14px;
+        min-height: 44px;
+    }
+
+    .input-group select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .input-group input {
+        width: 100%;
+    }
+
+    .trade-buttons {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .action-btn {
+        padding: 14px 24px;
+        font-size: 14px;
+        min-height: 48px;
+        width: 100%;
+    }
+
+    /* Footer: wrap buttons */
+    .footer {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .footer-left {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .footer-btn {
+        padding: 10px 14px;
+        font-size: 12px;
+        min-height: 40px;
+    }
+
+    /* Tooltips: disable on mobile (no hover) */
     .tooltip-trigger::after {
-        width: 150px;
-        font-size: 10px;
+        display: none;
+    }
+
+    .tooltip-trigger {
+        border-bottom: none;
+        cursor: default;
+    }
+
+    /* Modals: near full-screen on mobile */
+    .modal-content {
+        max-width: 100%;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+        border-radius: 8px 8px 0 0;
+        margin: auto 0 0 0;
+        padding: 20px 16px;
+    }
+
+    .modal-btn {
+        padding: 14px 24px;
+        font-size: 14px;
+        min-height: 48px;
     }
 
     .help-content {
-        max-width: 95%;
-        padding: 20px;
+        max-width: 100%;
+        padding: 20px 16px;
     }
 
+    .help-sections {
+        gap: 12px;
+    }
+
+    /* Achievement notification: full-width */
     .achievement-notification {
-        right: 10px;
-        left: 10px;
+        right: 8px;
+        left: 8px;
         padding: 10px 15px;
+    }
+
+    /* Start screen: stack buttons */
+    .start-content {
+        padding: 20px 16px;
+        width: 100%;
+    }
+
+    .start-content h1 {
+        font-size: 24px;
+        letter-spacing: 2px;
+    }
+
+    .start-buttons {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .start-btn {
+        padding: 16px 24px;
+        font-size: 14px;
+        width: 100%;
+    }
+
+    /* Tutorial: constrain tooltip */
+    .tutorial-tooltip {
+        max-width: calc(100vw - 32px);
+        min-width: 260px;
+        left: 16px !important;
+        right: 16px;
+    }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+    .game-container {
+        padding: 4px;
+        gap: 4px;
+    }
+
+    .header-left .title {
+        font-size: 12px;
+    }
+
+    .header-center {
+        gap: 8px;
+    }
+
+    #turn-display {
+        font-size: 12px;
+    }
+
+    .progress-bar {
+        width: 100px;
+    }
+
+    .regime {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+
+    .panel-title {
+        font-size: 11px;
+        padding: 6px 8px;
+    }
+
+    .market-table th,
+    .market-table td {
+        padding: 8px 6px;
+        font-size: 11px;
+    }
+
+    /* On very small screens, also hide SECTOR */
+    .market-table th:nth-child(2),
+    .market-table td:nth-child(2) {
+        display: none;
+    }
+
+    .psychology-item .label {
+        width: 80px;
+        font-size: 10px;
+    }
+
+    .stat-row {
+        padding: 4px 6px;
+    }
+
+    .stat-label {
+        font-size: 10px;
+    }
+
+    .stat-value {
+        font-size: 11px;
     }
 }
 
@@ -1439,12 +1831,17 @@ body {
 @media (max-width: 768px) {
     .chart-modal-content {
         padding: 15px;
+        max-width: 100%;
     }
 
     .chart-header {
         flex-direction: column;
         gap: 10px;
         text-align: center;
+    }
+
+    .chart-header h2 {
+        font-size: 16px;
     }
 
     .chart-info {
@@ -1454,10 +1851,16 @@ body {
 
     .chart-container {
         height: 200px;
+        padding: 10px;
     }
 
     .chart-stats {
         grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+    }
+
+    .chart-stat {
+        padding: 8px;
     }
 
     .chart-actions {
@@ -1466,7 +1869,9 @@ body {
 
     .chart-action-btn {
         flex: 1;
-        min-width: 100px;
+        min-width: 80px;
+        padding: 12px 16px;
+        min-height: 44px;
     }
 }
 
@@ -1946,6 +2351,15 @@ body {
 }
 
 @media (max-width: 768px) {
+    .options-modal-content {
+        max-width: 100%;
+    }
+
+    .options-header {
+        flex-direction: column;
+        gap: 8px;
+    }
+
     .options-chain {
         grid-template-columns: 1fr;
     }
@@ -1961,5 +2375,16 @@ body {
     .options-buy-inputs {
         width: 100%;
         justify-content: center;
+    }
+
+    .options-buy-inputs select,
+    .options-buy-inputs input {
+        min-height: 44px;
+        font-size: 14px;
+    }
+
+    #btn-buy-option {
+        width: 100%;
+        min-height: 48px;
     }
 }

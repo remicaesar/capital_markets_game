@@ -16,6 +16,7 @@ from web.schemas import (
     BuyOptionResponse, OptionActionResponse, OptionChainResponse
 )
 from web.game_manager import game_manager
+from utils.save_manager import InvalidSlotName
 
 router = APIRouter(prefix="/api/game", tags=["game"])
 
@@ -98,7 +99,11 @@ async def save_game(request: SaveGameRequest):
     if not session:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    path = game_manager.save_game_to_file(session, request.slot)
+    try:
+        path = game_manager.save_game_to_file(session, request.slot)
+    except InvalidSlotName as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     return SaveGameResponse(
         success=True,
         message=f"Game saved to slot '{request.slot}'",

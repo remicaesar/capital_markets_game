@@ -68,12 +68,13 @@ class Market:
         return (self.market_history[-1] - self.market_history[-2]) / self.market_history[-2]
 
     def _apply_sector_correlations(self, sector_impacts: Dict[str, float]):
-        """Apply correlations between sectors"""
+        """Apply correlations between sectors using original impacts (no feedback)"""
+        original = dict(sector_impacts)
         for (s1, s2), correlation in SECTOR_CORRELATIONS.items():
-            if s1 in sector_impacts and sector_impacts[s1] != 0:
-                sector_impacts[s2] = sector_impacts.get(s2, 0) + sector_impacts[s1] * correlation
-            if s2 in sector_impacts and sector_impacts[s2] != 0:
-                sector_impacts[s1] = sector_impacts.get(s1, 0) + sector_impacts[s2] * correlation
+            if s1 in original and original[s1] != 0:
+                sector_impacts[s2] = sector_impacts.get(s2, 0) + original[s1] * correlation
+            if s2 in original and original[s2] != 0:
+                sector_impacts[s1] = sector_impacts.get(s1, 0) + original[s2] * correlation
 
     def _process_smart_money(self) -> Dict[str, float]:
         """Smart money trades before news becomes public"""

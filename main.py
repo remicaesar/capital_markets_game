@@ -37,7 +37,7 @@ from ui.input_helpers import get_int_input, get_company_input
 from config.settings import MAX_TURNS, TRANSACTION_FEE
 from utils.save_manager import (
     save_game, load_game, deserialize_game_state,
-    list_saves, delete_save, get_save_path
+    list_saves, delete_save, get_save_path, validate_slot, InvalidSlotName
 )
 
 console = Console(width=120)  # Set reasonable width for better formatting
@@ -128,6 +128,15 @@ def main():
     if args.list_saves:
         display_saves()
         return
+
+    # Reject unusable slot names up front rather than at the first autosave
+    for slot_arg in (args.save_slot, args.load):
+        if slot_arg is not None:
+            try:
+                validate_slot(slot_arg)
+            except InvalidSlotName as exc:
+                console.print(f"[red]{exc}[/red]")
+                return
 
     # Initialize game state
     market = None
@@ -349,7 +358,12 @@ def main():
 
         elif action == "save":
             slot_name = input("Save slot name (Enter for autosave): ").strip() or "autosave"
-            save_path = save_game(market, player, game_seed, slot_name)
+            try:
+                save_path = save_game(market, player, game_seed, slot_name)
+            except InvalidSlotName as exc:
+                console.print(f"[red]❌ {exc}[/red]")
+                input("\nPress Enter to continue...")
+                continue
             console.print(f"[green]Game saved to {save_path}[/green]")
             input("\nPress Enter to continue...")
             continue
@@ -380,8 +394,14 @@ def main():
                 console.print(f"[red]{event}[/red]")
             input("\nPress Enter to continue...")
 
-        if market.turn < MAX_TURNS:
-            input("\nPress Enter to advance to next turn...")
+        # `<=` not `<`: on the final turn the clock still has to tick over to
+        # MAX_TURNS + 1, otherwise the `while` condition never goes false and the
+        # game loops on turn 50 forever without ever reaching the results screen.
+        if market.turn <= MAX_TURNS:
+            if market.turn == MAX_TURNS:
+                input("\nPress Enter to close out the final turn...")
+            else:
+                input("\nPress Enter to advance to next turn...")
             # Advance turn and capture news events
             news_events = market.advance_turn(player)
 

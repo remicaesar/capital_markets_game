@@ -17,26 +17,26 @@ class MarketRegime:
 
     REGIMES = {
         "bull": {
-            "volatility_mult": 0.7,
-            "trend_strength": 0.015,
+            "volatility_mult": 0.6,
+            "trend_strength": 0.01,
             "correlation_mult": 0.7,
-            "news_sensitivity": 0.6,
+            "news_sensitivity": 0.5,
             "mean_reversion": 0.3,
             "description": "🐂 Bull Market - Optimism Reigns"
         },
         "bear": {
-            "volatility_mult": 1.5,
-            "trend_strength": -0.02,
-            "correlation_mult": 1.8,
-            "news_sensitivity": 2.0,
+            "volatility_mult": 1.2,
+            "trend_strength": -0.012,
+            "correlation_mult": 1.5,
+            "news_sensitivity": 1.5,
             "mean_reversion": 0.1,
             "description": "🐻 Bear Market - Fear Dominates"
         },
         "volatile": {
-            "volatility_mult": 2.5,
+            "volatility_mult": 1.6,
             "trend_strength": 0.0,
             "correlation_mult": 0.5,
-            "news_sensitivity": 3.0,
+            "news_sensitivity": 2.0,
             "mean_reversion": 0.8,
             "description": "🌪️ Volatile Market - Chaos Rules"
         },

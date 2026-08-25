@@ -13,6 +13,7 @@ let gameState = {
     selectedCompany: null,
     companies: [],
     netWorthHistory: [],
+    marketReturnHistory: [],
     tradeHistory: [],
     achievements: {}
 };
@@ -279,6 +280,10 @@ function updateMarketTable(companies) {
         const changeClass = company.change_pct >= 0 ? 'positive' : 'negative';
         const changeSign = company.change_pct >= 0 ? '+' : '';
         
+        const debtClass = company.debt_level === 'High' ? 'negative' : company.debt_level === 'Low' ? 'positive' : '';
+        const growthClass = (company.growth_rate || 0) >= 0 ? 'positive' : 'negative';
+        const growthSign = (company.growth_rate || 0) >= 0 ? '+' : '';
+
         row.innerHTML = `
             <td class="company-name" data-company="${company.name}">
                 <span class="company-name-text">${company.name}</span>
@@ -291,6 +296,9 @@ function updateMarketTable(companies) {
             <td class="${company.momentum >= 0 ? 'positive' : 'negative'}">${company.momentum >= 0 ? '+' : ''}${company.momentum.toFixed(2)}%</td>
             <td>${company.volume.toFixed(2)}</td>
             <td>${company.beta.toFixed(2)}</td>
+            <td>${(company.pe_ratio || 0).toFixed(1)}</td>
+            <td class="${growthClass}">${growthSign}${(company.growth_rate || 0).toFixed(1)}%</td>
+            <td class="${debtClass}">${company.debt_level || '-'}</td>
             <td>${company.trend}</td>
         `;
 
@@ -465,7 +473,7 @@ function updateOrderPreview() {
     const shares = parseInt(elements.sharesInput.value) || 0;
 
     if (company && shares > 0) {
-        const cost = company.price * shares * 1.005; // Include ~0.5% fee estimate
+        const cost = company.price * shares * 1.01; // Include 1% transaction fee
         elements.orderCost.textContent = formatCurrency(cost);
     } else {
         elements.orderCost.textContent = '$0.00';
@@ -482,6 +490,7 @@ function drawPerformanceChart() {
 
     const ctx = canvas.getContext('2d');
     const data = gameState.netWorthHistory;
+    const marketData = gameState.marketReturnHistory;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -500,12 +509,18 @@ function drawPerformanceChart() {
     const chartWidth = canvas.width - padding * 2;
     const chartHeight = canvas.height - padding * 2;
 
-    const minValue = Math.min(...data) * 0.95;
-    const maxValue = Math.max(...data) * 1.05;
+    // Convert net worth to percentage returns for comparison
+    const startingValue = data[0] || 10000;
+    const playerReturns = data.map(v => ((v - startingValue) / startingValue) * 100);
+
+    // Combine both series to find the range
+    const allValues = [...playerReturns, ...marketData];
+    const minValue = Math.min(...allValues, 0) - 2;
+    const maxValue = Math.max(...allValues, 0) + 2;
     const range = maxValue - minValue || 1;
 
-    // Draw baseline (starting value)
-    const baselineY = padding + chartHeight - ((10000 - minValue) / range) * chartHeight;
+    // Draw 0% baseline
+    const baselineY = padding + chartHeight - ((0 - minValue) / range) * chartHeight;
     ctx.strokeStyle = '#444';
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -514,48 +529,74 @@ function drawPerformanceChart() {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw performance line
-    const lastValue = data[data.length - 1];
-    const isPositive = lastValue >= 10000;
+    // Draw "0%" label
+    ctx.fillStyle = '#555';
+    ctx.font = '9px Consolas, Monaco, monospace';
+    ctx.fillText('0%', padding, baselineY - 3);
 
-    ctx.strokeStyle = isPositive ? '#00ff00' : '#ff4444';
-    ctx.lineWidth = 2;
+    // Helper to draw a line series
+    function drawLine(values, maxLen, color, lineWidth) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        values.forEach((value, index) => {
+            const x = padding + (index / (maxLen - 1)) * chartWidth;
+            const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+            if (index === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    }
+
+    const maxLen = Math.max(playerReturns.length, marketData.length);
+
+    // Draw market benchmark line (dashed, orange)
+    if (marketData.length >= 2) {
+        ctx.setLineDash([4, 4]);
+        drawLine(marketData, maxLen, '#ff9900', 1.5);
+        ctx.setLineDash([]);
+    }
+
+    // Draw player performance line (solid, green/red)
+    const lastReturn = playerReturns[playerReturns.length - 1];
+    const isPositive = lastReturn >= 0;
+    const playerColor = isPositive ? '#00ff00' : '#ff4444';
+    drawLine(playerReturns, maxLen, playerColor, 2);
+
+    // Fill area between player line and baseline
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = playerColor;
     ctx.beginPath();
-
-    data.forEach((value, index) => {
-        const x = padding + (index / (data.length - 1)) * chartWidth;
+    playerReturns.forEach((value, index) => {
+        const x = padding + (index / (maxLen - 1)) * chartWidth;
         const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
-
-        if (index === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
+        if (index === 0) { ctx.moveTo(x, baselineY); ctx.lineTo(x, y); }
+        else ctx.lineTo(x, y);
     });
-
-    ctx.stroke();
-
-    // Fill area under/over baseline
-    ctx.globalAlpha = 0.1;
-    ctx.fillStyle = isPositive ? '#00ff00' : '#ff4444';
-    ctx.beginPath();
-
-    data.forEach((value, index) => {
-        const x = padding + (index / (data.length - 1)) * chartWidth;
-        const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
-
-        if (index === 0) {
-            ctx.moveTo(x, baselineY);
-            ctx.lineTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    });
-
-    ctx.lineTo(canvas.width - padding, baselineY);
+    ctx.lineTo(padding + ((playerReturns.length - 1) / (maxLen - 1)) * chartWidth, baselineY);
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
+
+    // Draw legend
+    ctx.font = '9px Consolas, Monaco, monospace';
+    const legendY = padding + 4;
+    // Player
+    ctx.fillStyle = playerColor;
+    ctx.fillRect(canvas.width - padding - 95, legendY - 5, 8, 2);
+    ctx.fillText(`You: ${lastReturn >= 0 ? '+' : ''}${lastReturn.toFixed(1)}%`, canvas.width - padding - 83, legendY);
+    // Market
+    if (marketData.length >= 2) {
+        const lastMarket = marketData[marketData.length - 1];
+        ctx.fillStyle = '#ff9900';
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(canvas.width - padding - 95, legendY + 10);
+        ctx.lineTo(canvas.width - padding - 87, legendY + 10);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText(`Mkt: ${lastMarket >= 0 ? '+' : ''}${lastMarket.toFixed(1)}%`, canvas.width - padding - 83, legendY + 14);
+    }
 
     // Update label
     document.getElementById('graph-label-end').textContent = `Turn ${data.length}`;
@@ -1192,6 +1233,7 @@ async function handleNewGame() {
 
         gameState.gameId = response.game_id;
         gameState.netWorthHistory = [response.state.player.net_worth];
+        gameState.marketReturnHistory = response.state.market_return_history || [0];
         gameState.tradeHistory = [];
         gameState.achievements = {};
         elements.gameIdDisplay.textContent = `Game ID: ${response.game_id}`;
@@ -1315,8 +1357,9 @@ async function handleNextTurn() {
     try {
         const response = await advanceTurn(gameState.gameId);
 
-        // Track net worth history
+        // Track net worth and market return history
         gameState.netWorthHistory.push(response.state.player.net_worth);
+        gameState.marketReturnHistory = response.state.market_return_history || gameState.marketReturnHistory;
 
         updateFullUI(response.state);
         drawPerformanceChart();
@@ -1364,6 +1407,7 @@ async function handleLoadGame(slot) {
 
         gameState.gameId = response.game_id;
         gameState.netWorthHistory = [response.state.player.net_worth];
+        gameState.marketReturnHistory = response.state.market_return_history || [0];
         gameState.tradeHistory = [];
         gameState.achievements = {};
         elements.gameIdDisplay.textContent = `Game ID: ${response.game_id}`;
@@ -1498,7 +1542,17 @@ function formatCurrency(value) {
 function setupEventHandlers() {
     // Start screen buttons
     document.getElementById('btn-start-new').addEventListener('click', handleNewGame);
+    document.getElementById('btn-start-tutorial').addEventListener('click', async () => {
+        await handleNewGame();
+        setTimeout(startTutorial, 600);
+    });
     document.getElementById('btn-start-load').addEventListener('click', handleShowSaves);
+
+    // Tutorial buttons
+    document.getElementById('btn-tutorial-next').addEventListener('click', () => {
+        showTutorialStep(tutorialState.currentStep + 1);
+    });
+    document.getElementById('btn-tutorial-skip').addEventListener('click', endTutorial);
 
     // Trade action buttons
     document.querySelectorAll('.trade-btn').forEach(btn => {
@@ -1652,13 +1706,20 @@ function setupEventHandlers() {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        // Close modals on Escape
+        // Close modals or tutorial on Escape
         if (e.key === 'Escape') {
+            if (tutorialState.active) {
+                endTutorial();
+                return;
+            }
             document.querySelectorAll('.modal:not(.hidden)').forEach(modal => {
                 modal.classList.add('hidden');
             });
             return;
         }
+
+        // Don't handle shortcuts during tutorial
+        if (tutorialState.active) return;
 
         // Only handle other shortcuts when game is active and no modal is open
         if (!gameState.gameId) return;
@@ -1700,6 +1761,135 @@ function setupEventHandlers() {
                 break;
         }
     });
+}
+
+// ============================================================================
+// Tutorial System
+// ============================================================================
+
+const TUTORIAL_STEPS = [
+    {
+        target: '.market-panel',
+        title: 'THE MARKET',
+        text: 'This is your trading floor. Each row is a company you can trade. Watch the <strong>price changes</strong>, <strong>RSI</strong> (below 30 = oversold, above 70 = overbought), and <strong>P/E ratio</strong> to spot opportunities. Click any company name to see its price chart.',
+    },
+    {
+        target: '.psychology-panel',
+        title: 'MARKET PSYCHOLOGY',
+        text: 'The <strong>Fear/Greed index</strong> shows crowd sentiment. When fear is extreme (below 25), stocks may be cheap. When greed is extreme (above 75), a correction may be coming. Watch <strong>Complacency</strong> — when it\'s high, a crisis is more likely.',
+    },
+    {
+        target: '.stats-panel',
+        title: 'YOUR STATS',
+        text: 'Track your performance here. <strong>Net Worth</strong> is your score. <strong>Sharpe Ratio</strong> measures risk-adjusted returns — above 1.0 is good. <strong>Drawdown</strong> shows your worst peak-to-trough loss. Keep fees low!',
+    },
+    {
+        target: '.graph-panel',
+        title: 'PERFORMANCE CHART',
+        text: 'The <strong>solid line</strong> is your portfolio return. The <strong>dashed orange line</strong> is the market benchmark. Your goal: beat the market. If you\'re above the orange line at the end, you\'ve generated <strong>alpha</strong>.',
+    },
+    {
+        target: '.trade-panel',
+        title: 'TRADING',
+        text: '<strong>BUY</strong> to go long (profit when price rises). <strong>SHORT</strong> to bet against a stock (profit when price falls). Select a company, set quantity, and hit Execute. You can also place <strong>limit orders</strong> that trigger at a target price.',
+    },
+    {
+        target: '#btn-next-turn',
+        title: 'ADVANCING TIME',
+        text: 'Click <strong>NEXT TURN</strong> to advance the market. Each turn, news events move prices, crises can strike, and your pending orders execute. You have <strong>50 turns</strong> — use them wisely. Shortcut: <span class="key">Ctrl+Enter</span>',
+    },
+    {
+        target: '.news-panel',
+        title: 'NEWS & EVENTS',
+        text: 'News drives price movements. Each headline tells you <strong>what happened</strong> and <strong>why it matters</strong>. Watch for crisis warnings — they build over several turns before a crash. Good traders read the news before trading.',
+    },
+];
+
+let tutorialState = {
+    active: false,
+    currentStep: 0,
+};
+
+function startTutorial() {
+    tutorialState.active = true;
+    tutorialState.currentStep = 0;
+    showTutorialStep(0);
+}
+
+function endTutorial() {
+    tutorialState.active = false;
+    document.getElementById('tutorial-overlay').classList.add('hidden');
+    localStorage.setItem('tutorial_completed', 'true');
+}
+
+function showTutorialStep(stepIndex) {
+    const overlay = document.getElementById('tutorial-overlay');
+    const spotlight = document.getElementById('tutorial-spotlight');
+    const tooltip = document.getElementById('tutorial-tooltip');
+
+    if (stepIndex >= TUTORIAL_STEPS.length) {
+        endTutorial();
+        showTradeMessage('Tutorial complete! Start trading — buy a stock you like, then hit Next Turn.');
+        return;
+    }
+
+    const step = TUTORIAL_STEPS[stepIndex];
+    tutorialState.currentStep = stepIndex;
+
+    // Update step counter
+    document.getElementById('tutorial-step-num').textContent = stepIndex + 1;
+    document.getElementById('tutorial-step-total').textContent = TUTORIAL_STEPS.length;
+
+    // Update content
+    document.getElementById('tutorial-title').innerHTML = step.title;
+    document.getElementById('tutorial-text').innerHTML = step.text;
+
+    // Update button text on last step
+    const nextBtn = document.getElementById('btn-tutorial-next');
+    nextBtn.textContent = stepIndex === TUTORIAL_STEPS.length - 1 ? 'START TRADING' : 'NEXT';
+
+    // Find and highlight target element
+    const targetEl = document.querySelector(step.target);
+    if (targetEl) {
+        const rect = targetEl.getBoundingClientRect();
+        const padding = 6;
+
+        spotlight.style.top = (rect.top - padding) + 'px';
+        spotlight.style.left = (rect.left - padding) + 'px';
+        spotlight.style.width = (rect.width + padding * 2) + 'px';
+        spotlight.style.height = (rect.height + padding * 2) + 'px';
+
+        // Position tooltip — try below, then above, then to the right
+        const tooltipWidth = 380;
+        const tooltipHeight = 220;
+
+        let tooltipTop, tooltipLeft;
+
+        // Try below
+        if (rect.bottom + tooltipHeight + 20 < window.innerHeight) {
+            tooltipTop = rect.bottom + 16;
+            tooltipLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
+        }
+        // Try above
+        else if (rect.top - tooltipHeight - 20 > 0) {
+            tooltipTop = rect.top - tooltipHeight - 16;
+            tooltipLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
+        }
+        // Right side
+        else {
+            tooltipTop = rect.top;
+            tooltipLeft = rect.right + 16;
+        }
+
+        // Clamp to viewport
+        tooltipLeft = Math.max(10, Math.min(tooltipLeft, window.innerWidth - tooltipWidth - 10));
+        tooltipTop = Math.max(10, Math.min(tooltipTop, window.innerHeight - tooltipHeight - 10));
+
+        tooltip.style.top = tooltipTop + 'px';
+        tooltip.style.left = tooltipLeft + 'px';
+    }
+
+    overlay.classList.remove('hidden');
 }
 
 // ============================================================================
@@ -1746,10 +1936,16 @@ function cacheElements() {
 function init() {
     cacheElements();
     setupEventHandlers();
-    
+
     // Show start screen after a brief delay
     setTimeout(() => {
         showStartScreen();
+        // If user has completed the tutorial before, de-emphasize the tutorial button
+        if (localStorage.getItem('tutorial_completed')) {
+            const tutBtn = document.getElementById('btn-start-tutorial');
+            tutBtn.classList.remove('tutorial-start-btn');
+            tutBtn.style.animation = 'none';
+        }
     }, 500);
 }
 

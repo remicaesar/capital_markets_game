@@ -47,6 +47,23 @@ class Player:
     options_pnl_realized: float = 0.0  # Track realized P&L from options
 
     @staticmethod
+    def _validate_share_count(shares) -> bool:
+        """
+        Reject share counts that are not positive whole numbers.
+
+        Every cash-moving path funnels through here first. A negative count used to
+        sail through the affordability checks (a negative cost is always "affordable")
+        and credit the account instead of debiting it.
+        """
+        if isinstance(shares, bool) or not isinstance(shares, int):
+            console.print("[red]❌ Share count must be a whole number.[/red]")
+            return False
+        if shares <= 0:
+            console.print("[red]❌ Share count must be greater than zero.[/red]")
+            return False
+        return True
+
+    @staticmethod
     def calculate_slippage(shares: int, company, is_buy: bool) -> tuple:
         """
         Calculate market impact slippage for an order.
@@ -95,9 +112,13 @@ class Player:
     def margin_equity(self, market: "Market") -> float:
         """
         Calculate margin equity for short positions.
-        Equity = Cash + Long Portfolio Value + Short P&L
+        Equity = Cash + Long Portfolio Value - Short Liability
+
+        The short sale proceeds are already sitting in `cash`, and the borrowed shares
+        are a liability marked at the current price. Adding short P&L on top of cash
+        would count the proceeds twice.
         """
-        return self.cash + self.portfolio_value(market) + self.short_position_pnl(market)
+        return self.cash + self.portfolio_value(market) - self.short_position_value(market)
 
     def available_margin(self, market: "Market") -> float:
         """Calculate how much margin is available for new shorts"""
@@ -112,8 +133,14 @@ class Player:
         return self.margin_equity(market) / SHORT_MARGIN_REQUIREMENT
 
     def net_worth(self, market: "Market") -> float:
-        """Total net worth including short position P&L and options"""
-        return self.cash + self.portfolio_value(market) + self.short_position_pnl(market) + self.options_value(market)
+        """
+        Total net worth: cash + longs + options, less the cost of buying back
+        every borrowed share at today's price.
+        """
+        return (self.cash
+                + self.portfolio_value(market)
+                + self.options_value(market)
+                - self.short_position_value(market))
 
     def total_return_pct(self, market: "Market") -> float:
         return ((self.net_worth(market) - self.starting_cash) / self.starting_cash) * 100
@@ -152,6 +179,9 @@ class Player:
         return max_dd * 100  # As percentage
 
     def buy(self, market: "Market", company, shares: int):
+        if not self._validate_share_count(shares):
+            return False
+
         # Calculate slippage (market impact)
         slippage_pct, exec_price = self.calculate_slippage(shares, company, is_buy=True)
         slippage_cost = (exec_price - company.price) * shares
@@ -191,6 +221,9 @@ class Player:
         return True
 
     def sell(self, market: "Market", company, shares: int):
+        if not self._validate_share_count(shares):
+            return False
+
         if company.name not in self.portfolio:
             console.print("[red]❌ You don't own that stock.[/red]")
             return False
@@ -249,6 +282,9 @@ class Player:
         Open a short position (borrow and sell shares).
         Requires margin and pays locate fee. Subject to slippage.
         """
+        if not self._validate_share_count(shares):
+            return False
+
         # Check if already long this stock
         if company.name in self.portfolio:
             console.print("[red]❌ Cannot short a stock you own. Sell your long position first.[/red]")
@@ -311,6 +347,9 @@ class Player:
         """
         Close a short position (buy shares to return). Subject to slippage.
         """
+        if not self._validate_share_count(shares):
+            return False
+
         if company.name not in self.short_positions:
             console.print("[red]❌ You don't have a short position in that stock.[/red]")
             return False
@@ -403,7 +442,10 @@ class Player:
             )
 
             for name, (shares, borrow_price) in positions_by_loss:
-                if self.margin_equity(market) / self.short_position_value(market) >= SHORT_MARGIN_REQUIREMENT:
+                remaining_short_value = self.short_position_value(market)
+                if remaining_short_value <= 0:
+                    break
+                if self.margin_equity(market) / remaining_short_value >= SHORT_MARGIN_REQUIREMENT:
                     break
 
                 company = market.companies[name]
@@ -769,12 +811,18 @@ class Player:
 
         return True, f"Bought {contracts} {option_desc} contracts", option_dict
 
-    def exercise_option(self, market: "Market", option_id: int) -> Tuple[bool, str]:
+    def exercise_option(self, market: "Market", option_id: int,
+                        allow_expired: bool = False) -> Tuple[bool, str]:
         """
-        Exercise an option before expiry.
+        Exercise an option.
 
         For calls: Buy shares at strike price (must have cash)
         For puts: Sell shares at strike price (must own shares)
+
+        `allow_expired` is set only by end-of-turn settlement. A player exercising by
+        hand must not be able to reach back past expiry, but settlement runs precisely
+        *because* the contract has expired - without this flag every ITM contract was
+        refused at expiry and booked as a total loss.
         """
         option = None
         for opt in self.options_positions:
@@ -785,7 +833,7 @@ class Player:
         if option is None:
             return False, f"Option #{option_id} not found"
 
-        if option.is_expired(market.turn):
+        if option.is_expired(market.turn) and not allow_expired:
             return False, f"Option #{option_id} has expired"
 
         company = market.companies.get(option.company)
@@ -925,63 +973,69 @@ class Player:
 
     def process_expired_options(self, market: "Market") -> List[str]:
         """
-        Process options that have expired.
-        ITM options are auto-exercised if possible, OTM expire worthless.
+        Settle options that have expired.
+        ITM options are auto-exercised where possible, everything else expires worthless.
         Called at the end of each turn.
+
+        Every expired contract is booked for removal before any settlement is attempted,
+        so no failure path can leave one on the book to be re-settled next turn.
         """
         messages = []
         options_to_remove = []
 
-        for option in self.options_positions:
-            if option.is_expired(market.turn):
-                company = market.companies.get(option.company)
-                if not company:
-                    options_to_remove.append(option.id)
-                    continue
+        for option in list(self.options_positions):
+            if not option.is_expired(market.turn):
+                continue
 
-                current_price = company.price
+            # An expired contract leaves the book on this pass, however it resolves.
+            options_to_remove.append(option.id)
 
-                if option.is_in_the_money(current_price):
-                    # Try to auto-exercise ITM options
-                    shares = option.contracts * 100
+            company = market.companies.get(option.company)
+            if not company:
+                continue
 
-                    if option.option_type == OptionType.CALL:
-                        cost = option.strike_price * shares
-                        if cost <= self.cash:
-                            # Auto-exercise
-                            success, msg = self.exercise_option(market, option.id)
-                            if success:
-                                messages.append(f"📋 Auto-exercised ITM CALL #{option.id}: {msg}")
-                            else:
-                                # Can't exercise, expires worthless
-                                loss = option.total_premium_paid()
-                                self.options_pnl_realized -= loss
-                                messages.append(f"⚠️ CALL #{option.id} expired ITM but couldn't exercise (insufficient funds). Lost ${loss:.2f}")
-                                options_to_remove.append(option.id)
-                        else:
-                            loss = option.total_premium_paid()
-                            self.options_pnl_realized -= loss
-                            messages.append(f"⚠️ CALL #{option.id} expired ITM but couldn't exercise (need ${cost:.2f}). Lost ${loss:.2f}")
-                            options_to_remove.append(option.id)
-                    else:  # PUT
-                        if option.company in self.portfolio and self.portfolio[option.company][0] >= shares:
-                            success, msg = self.exercise_option(market, option.id)
-                            if success:
-                                messages.append(f"📋 Auto-exercised ITM PUT #{option.id}: {msg}")
-                        else:
-                            loss = option.total_premium_paid()
-                            self.options_pnl_realized -= loss
-                            messages.append(f"⚠️ PUT #{option.id} expired ITM but no shares to sell. Lost ${loss:.2f}")
-                            options_to_remove.append(option.id)
-                else:
-                    # OTM - expires worthless
-                    loss = option.total_premium_paid()
-                    self.options_pnl_realized -= loss
-                    opt_type = option.option_type.value.upper()
-                    messages.append(f"📉 {opt_type} #{option.id} ({option.company} @ ${option.strike_price:.2f}) expired worthless. Lost ${loss:.2f}")
-                    options_to_remove.append(option.id)
+            current_price = company.price
+            shares = option.contracts * 100
+            premium = option.total_premium_paid()
+            opt_type = option.option_type.value.upper()
 
-        # Remove expired options
+            if not option.is_in_the_money(current_price):
+                self.options_pnl_realized -= premium
+                messages.append(
+                    f"📉 {opt_type} #{option.id} ({option.company} @ ${option.strike_price:.2f}) "
+                    f"expired worthless. Lost ${premium:.2f}"
+                )
+                continue
+
+            # In the money at expiry - settle it if the player can cover their side.
+            if option.option_type == OptionType.CALL:
+                required_cash = option.strike_price * shares * (1 + TRANSACTION_FEE)
+                can_settle = required_cash <= self.cash
+                blocked = f"needs ${required_cash:,.2f} cash, has ${self.cash:,.2f}"
+            else:
+                owned = self.portfolio.get(option.company, (0, 0))[0]
+                can_settle = owned >= shares
+                blocked = f"needs {shares} shares to deliver, holds {owned}"
+
+            if not can_settle:
+                self.options_pnl_realized -= premium
+                messages.append(
+                    f"⚠️ {opt_type} #{option.id} expired in the money but could not be "
+                    f"exercised - {blocked}. Lost ${premium:.2f}"
+                )
+                continue
+
+            success, msg = self.exercise_option(market, option.id, allow_expired=True)
+            if success:
+                messages.append(f"📋 Auto-exercised ITM {opt_type} #{option.id}: {msg}")
+            else:
+                self.options_pnl_realized -= premium
+                messages.append(
+                    f"⚠️ {opt_type} #{option.id} expired in the money but could not be "
+                    f"exercised - {msg}. Lost ${premium:.2f}"
+                )
+
+        # Remove every expired contract
         self.options_positions = [o for o in self.options_positions if o.id not in options_to_remove]
 
         for msg in messages:

@@ -2,7 +2,7 @@
 Pydantic models for API request/response validation
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
@@ -15,7 +15,7 @@ class ActionRequest(BaseModel):
     game_id: str
     action: str  # buy, sell, short, cover
     company: str
-    shares: int
+    shares: int = Field(gt=0, description="Must be a positive whole number of shares")
 
 
 class AdvanceRequest(BaseModel):
@@ -36,8 +36,8 @@ class PlaceOrderRequest(BaseModel):
     order_type: str  # 'limit', 'stop_loss', 'take_profit'
     action: str  # 'buy', 'sell', 'short', 'cover'
     company: str
-    shares: int
-    limit_price: float
+    shares: int = Field(gt=0, description="Must be a positive whole number of shares")
+    limit_price: float = Field(gt=0)
 
 
 class CancelOrderRequest(BaseModel):
@@ -49,8 +49,8 @@ class BuyOptionRequest(BaseModel):
     game_id: str
     company: str
     option_type: str  # 'call' or 'put'
-    strike_price: float
-    contracts: int
+    strike_price: float = Field(gt=0)
+    contracts: int = Field(gt=0)
 
 
 class OptionActionRequest(BaseModel):
@@ -69,6 +69,15 @@ class CompanyState(BaseModel):
     volume: float
     trend: str
     beta: float
+    pe_ratio: float = 0.0
+    growth_rate: float = 0.0
+    debt_level: str = "Medium"
+    valuation: str = "Fair"
+    # response_model is a projection: any key not declared here is silently
+    # dropped from the payload. These two feed the price/volume charts, and
+    # their absence showed up only as a chart with a single flat data point.
+    price_history: List[float] = []
+    volume_history: List[float] = []
 
 
 class PortfolioPosition(BaseModel):
@@ -168,6 +177,7 @@ class GameState(BaseModel):
     psychology: PsychologyState
     news: List[str]
     game_over: bool = False
+    market_return_history: List[float] = []
 
 
 class NewGameResponse(BaseModel):

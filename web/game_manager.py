@@ -4,16 +4,21 @@ Game session management for the web UI
 
 import uuid
 import random
+import logging
 import numpy as np
 from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass
 
 from models.market import Market
 from models.player import Player
-from config.settings import MAX_TURNS, TRANSACTION_FEE
+from config.settings import MAX_TURNS, TRANSACTION_FEE, SHORT_MARGIN_REQUIREMENT, SHORT_LOCATE_FEE
 from utils.save_manager import (
-    save_game, load_game, deserialize_game_state, list_saves
+    save_game, load_game, serialize_game_state, deserialize_game_state, list_saves,
+    InvalidSlotName
 )
+from web.session_store import SessionStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,6 +36,40 @@ class GameManager:
 
     def __init__(self):
         self.sessions: Dict[str, GameSession] = {}
+        self.store = SessionStore()
+        self._restore_sessions()
+
+    def _persist_session(self, session: GameSession):
+        """Serialize and persist a session to SQLite"""
+        try:
+            state = serialize_game_state(session.market, session.player, session.seed)
+            self.store.save_session(
+                session.game_id, state, session.news_history, session.seed
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist session {session.game_id}: {e}")
+
+    def _restore_sessions(self):
+        """Restore all sessions from SQLite on startup"""
+        self.store.cleanup_expired()
+        saved = self.store.load_all_sessions()
+        restored = 0
+        for game_id, data in saved.items():
+            try:
+                market, player, seed = deserialize_game_state(data["state"])
+                session = GameSession(
+                    game_id=game_id,
+                    market=market,
+                    player=player,
+                    seed=seed,
+                    news_history=data.get("news_history", []),
+                )
+                self.sessions[game_id] = session
+                restored += 1
+            except Exception as e:
+                logger.warning(f"Failed to restore session {game_id}: {e}")
+        if restored:
+            logger.info(f"Restored {restored} session(s) from SQLite")
 
     def _initialize_random(self, seed: Optional[int] = None) -> int:
         """Initialize random number generators with seed"""
@@ -57,6 +96,7 @@ class GameManager:
         )
 
         self.sessions[game_id] = session
+        self._persist_session(session)
         return game_id, session
 
     def get_session(self, game_id: str) -> Optional[GameSession]:
@@ -67,6 +107,7 @@ class GameManager:
         """Delete a game session"""
         if game_id in self.sessions:
             del self.sessions[game_id]
+            self.store.delete_session(game_id)
             return True
         return False
 
@@ -88,6 +129,10 @@ class GameManager:
                 "volume": round(company.volume_history[-1] if company.volume_history else 1.0, 2),
                 "trend": company.get_trend_indicator(),
                 "beta": round(company.beta, 2),
+                "pe_ratio": round(company.pe_ratio, 1),
+                "growth_rate": round(company.growth_rate * 100, 1),
+                "debt_level": company.debt_level,
+                "valuation": company.get_valuation_status(),
                 "price_history": [round(p, 2) for p in company.price_history],
                 "volume_history": [round(v, 2) for v in company.volume_history]
             })
@@ -198,6 +243,13 @@ class GameManager:
                 "in_the_money": option.is_in_the_money(current_price)
             })
 
+        # Calculate market return history for benchmark
+        market_returns = []
+        if market.market_history:
+            initial_cap = market.market_history[0] if market.market_history else 1
+            for cap in market.market_history:
+                market_returns.append(float(round(((cap - initial_cap) / initial_cap) * 100, 2)) if initial_cap > 0 else 0.0)
+
         return {
             "turn": market.turn,
             "max_turns": MAX_TURNS,
@@ -210,13 +262,17 @@ class GameManager:
             "player": player_stats,
             "psychology": psychology,
             "news": session.news_history[-5:],  # Last 5 news items
-            "game_over": market.turn > MAX_TURNS
+            "game_over": market.turn > MAX_TURNS,
+            "market_return_history": market_returns,
         }
 
     def execute_action(self, session: GameSession, action: str, company_name: str, shares: int) -> Tuple[bool, str]:
         """Execute a trading action"""
         market = session.market
         player = session.player
+
+        if not isinstance(shares, int) or isinstance(shares, bool) or shares <= 0:
+            return False, "Share count must be a positive whole number"
 
         if company_name not in market.companies:
             return False, f"Company '{company_name}' not found"
@@ -239,6 +295,7 @@ class GameManager:
                     return False, f"Cannot afford {shares} shares. Max affordable: {max_shares}"
                 success = player.buy(market, company, shares)
                 if success:
+                    self._persist_session(session)
                     return True, f"Bought {shares} shares of {company_name} at ${company.price:.2f}"
                 return False, "Purchase failed - insufficient funds"
 
@@ -250,6 +307,7 @@ class GameManager:
                     return False, f"You only own {owned} shares of {company_name}"
                 success = player.sell(market, company, shares)
                 if success:
+                    self._persist_session(session)
                     return True, f"Sold {shares} shares of {company_name}"
                 return False, "Sale failed"
 
@@ -257,14 +315,15 @@ class GameManager:
                 if company_name in player.portfolio:
                     return False, "Cannot short a stock you own. Sell your long position first."
                 available_margin = player.available_margin(market)
-                margin_per_share = company.price * 0.5
-                fee_per_share = company.price * 0.015
+                margin_per_share = company.price * SHORT_MARGIN_REQUIREMENT
+                fee_per_share = company.price * (SHORT_LOCATE_FEE + TRANSACTION_FEE)
                 cost_per_share = margin_per_share + fee_per_share
                 max_shares = int(available_margin // cost_per_share) if cost_per_share > 0 else 0
                 if shares > max_shares:
                     return False, f"Insufficient margin. Max shortable: {max_shares}"
                 success = player.short(market, company, shares)
                 if success:
+                    self._persist_session(session)
                     return True, f"Shorted {shares} shares of {company_name} at ${company.price:.2f}"
                 return False, "Short failed - insufficient margin"
 
@@ -276,6 +335,7 @@ class GameManager:
                     return False, f"You only have {shorted} shares shorted"
                 success = player.cover(market, company, shares)
                 if success:
+                    self._persist_session(session)
                     return True, f"Covered {shares} shares of {company_name}"
                 return False, "Cover failed - insufficient funds"
 
@@ -339,6 +399,7 @@ class GameManager:
             if game_over:
                 final_stats = self._calculate_final_stats(market, player, session.seed)
 
+            self._persist_session(session)
             return news_events, game_over, final_stats
 
         finally:
@@ -402,7 +463,11 @@ class GameManager:
         Load game from file.
         Returns: (game_id, session, error_message)
         """
-        state = load_game(slot)
+        try:
+            state = load_game(slot)
+        except InvalidSlotName as exc:
+            return None, None, str(exc)
+
         if not state:
             return None, None, f"Save '{slot}' not found"
 
@@ -423,6 +488,7 @@ class GameManager:
             )
 
             self.sessions[game_id] = session
+            self._persist_session(session)
             return game_id, session, None
 
         except Exception as e:
@@ -445,7 +511,10 @@ class GameManager:
         sys.stdout = io.StringIO()
 
         try:
-            return player.place_order(market, order_type, action, company_name, shares, limit_price)
+            result = player.place_order(market, order_type, action, company_name, shares, limit_price)
+            if result[0]:  # success
+                self._persist_session(session)
+            return result
         finally:
             sys.stdout = old_stdout
 
@@ -458,7 +527,10 @@ class GameManager:
         sys.stdout = io.StringIO()
 
         try:
-            return session.player.cancel_order(order_id)
+            result = session.player.cancel_order(order_id)
+            if result[0]:
+                self._persist_session(session)
+            return result
         finally:
             sys.stdout = old_stdout
 
@@ -472,9 +544,12 @@ class GameManager:
         sys.stdout = io.StringIO()
 
         try:
-            return session.player.buy_option(
+            result = session.player.buy_option(
                 session.market, company_name, option_type, strike_price, contracts
             )
+            if result[0]:
+                self._persist_session(session)
+            return result
         finally:
             sys.stdout = old_stdout
 
@@ -487,7 +562,10 @@ class GameManager:
         sys.stdout = io.StringIO()
 
         try:
-            return session.player.exercise_option(session.market, option_id)
+            result = session.player.exercise_option(session.market, option_id)
+            if result[0]:
+                self._persist_session(session)
+            return result
         finally:
             sys.stdout = old_stdout
 
@@ -500,7 +578,10 @@ class GameManager:
         sys.stdout = io.StringIO()
 
         try:
-            return session.player.sell_option(session.market, option_id)
+            result = session.player.sell_option(session.market, option_id)
+            if result[0]:
+                self._persist_session(session)
+            return result
         finally:
             sys.stdout = old_stdout
 

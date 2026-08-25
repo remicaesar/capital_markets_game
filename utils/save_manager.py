@@ -4,12 +4,32 @@ Save/Load system for game state persistence
 
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
 # Default save directory
 SAVE_DIR = Path.home() / ".capital_markets_game" / "saves"
+
+# A save slot becomes a filename, so it must not be able to describe a path.
+# Without this, slot "../../../../tmp/pwned" resolves outside SAVE_DIR entirely -
+# and the web API takes the slot name straight from the request body.
+VALID_SLOT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+class InvalidSlotName(ValueError):
+    """Raised when a save slot name could escape the save directory."""
+
+
+def validate_slot(slot: str) -> str:
+    """Return the slot unchanged, or raise InvalidSlotName."""
+    if not isinstance(slot, str) or not VALID_SLOT.match(slot):
+        raise InvalidSlotName(
+            f"Invalid save slot {slot!r}. Use 1-64 letters, digits, '-' or '_', "
+            "starting with a letter or digit."
+        )
+    return slot
 
 
 def ensure_save_dir():
@@ -18,7 +38,8 @@ def ensure_save_dir():
 
 
 def get_save_path(slot: str = "autosave") -> Path:
-    """Get path for a save slot"""
+    """Get path for a save slot. Raises InvalidSlotName for unsafe names."""
+    validate_slot(slot)
     ensure_save_dir()
     return SAVE_DIR / f"{slot}.json"
 
@@ -68,13 +89,15 @@ def serialize_market(market: "Market") -> Dict[str, Any]:
             "arb_strength": market.algos.arb_strength,
         },
         "crisis_system": {
-            "active_crises": [
-                {
-                    "crisis_name": ac["crisis"]["name"],
-                    "remaining_duration": ac["remaining_duration"],
-                }
-                for ac in market.crisis_system.active_crises
-            ],
+            "active_crisis": {
+                "name": market.crisis_system.active_crisis.name,
+                "headline": market.crisis_system.active_crisis.headline,
+                "impact": market.crisis_system.active_crisis.impact,
+                "duration": market.crisis_system.active_crisis.duration,
+                "context": market.crisis_system.active_crisis.context,
+            } if market.crisis_system.active_crisis else None,
+            "warning_level": market.crisis_system.warning_level,
+            "turns_since_crisis": market.crisis_system.turns_since_crisis,
             "crisis_history": market.crisis_system.crisis_history,
         },
     }
@@ -95,6 +118,10 @@ def serialize_company(company: "Company") -> Dict[str, Any]:
         "momentum_score": company.momentum_score,
         "relative_strength": company.relative_strength,
         "earnings_momentum": company.earnings_momentum,
+        "pe_ratio": company.pe_ratio,
+        "growth_rate": company.growth_rate,
+        "debt_level": company.debt_level,
+        "earnings_per_share": company.earnings_per_share,
     }
 
 
@@ -119,6 +146,23 @@ def serialize_player(player: "Player") -> Dict[str, Any]:
         "trade_history": player.trade_history,
         "portfolio_values": player.portfolio_values,
         "skill_rating": player.skill_rating,
+        "next_order_id": player.next_order_id,
+        "pending_orders": player.pending_orders,
+        "options_pnl_realized": player.options_pnl_realized,
+        "options_positions": [
+            {
+                "id": opt.id,
+                "option_type": opt.option_type.value,
+                "company": opt.company,
+                "strike_price": opt.strike_price,
+                "premium": opt.premium,
+                "contracts": opt.contracts,
+                "created_turn": opt.created_turn,
+                "expiry_turn": opt.expiry_turn,
+                "underlying_price_at_purchase": opt.underlying_price_at_purchase,
+            }
+            for opt in player.options_positions
+        ],
     }
 
 
@@ -178,6 +222,10 @@ def deserialize_game_state(state: Dict[str, Any]) -> tuple:
         company.momentum_score = cdata["momentum_score"]
         company.relative_strength = cdata["relative_strength"]
         company.earnings_momentum = cdata["earnings_momentum"]
+        company.pe_ratio = cdata.get("pe_ratio", 15.0)
+        company.growth_rate = cdata.get("growth_rate", 0.05)
+        company.debt_level = cdata.get("debt_level", "Medium")
+        company.earnings_per_share = cdata.get("earnings_per_share", company.price / company.pe_ratio)
         market.companies[name] = company
 
     # Restore regime
@@ -215,21 +263,26 @@ def deserialize_game_state(state: Dict[str, Any]) -> tuple:
     market.news_system = AdvancedNewsSystem()
 
     # Restore crisis system
+    from systems.crisis_events import Crisis
     market.crisis_system = CrisisEventSystem()
     crisis_data = state["market"]["crisis_system"]
     market.crisis_system.crisis_history = crisis_data["crisis_history"]
+    market.crisis_system.warning_level = crisis_data.get("warning_level", 0)
+    market.crisis_system.turns_since_crisis = crisis_data.get("turns_since_crisis", 0)
 
-    # Restore active crises by finding matching crisis definitions
-    for ac in crisis_data["active_crises"]:
-        for crisis_def in CrisisEventSystem.CRISIS_EVENTS:
-            if crisis_def["name"] == ac["crisis_name"]:
-                market.crisis_system.active_crises.append({
-                    "crisis": crisis_def,
-                    "remaining_duration": ac["remaining_duration"],
-                })
-                break
+    # Restore active crisis (singular)
+    ac_data = crisis_data.get("active_crisis")
+    if ac_data:
+        market.crisis_system.active_crisis = Crisis(
+            name=ac_data["name"],
+            headline=ac_data["headline"],
+            impact=ac_data["impact"],
+            duration=ac_data["duration"],
+            context=ac_data["context"],
+        )
 
     # Restore player
+    from models.options import Option, OptionType
     player = Player.__new__(Player)
     pdata = state["player"]
     player.cash = pdata["cash"]
@@ -250,6 +303,32 @@ def deserialize_game_state(state: Dict[str, Any]) -> tuple:
     player.trade_history = pdata["trade_history"]
     player.portfolio_values = pdata["portfolio_values"]
     player.skill_rating = pdata["skill_rating"]
+
+    # Restore pending orders
+    player.pending_orders = pdata.get("pending_orders", [])
+    player.next_order_id = pdata.get("next_order_id", 1)
+
+    # Restore options positions
+    player.options_pnl_realized = pdata.get("options_pnl_realized", 0.0)
+    player.options_positions = []
+    for opt_data in pdata.get("options_positions", []):
+        option = Option(
+            id=opt_data["id"],
+            option_type=OptionType(opt_data["option_type"]),
+            company=opt_data["company"],
+            strike_price=opt_data["strike_price"],
+            premium=opt_data["premium"],
+            contracts=opt_data["contracts"],
+            created_turn=opt_data["created_turn"],
+            expiry_turn=opt_data["expiry_turn"],
+            underlying_price_at_purchase=opt_data["underlying_price_at_purchase"],
+        )
+        player.options_positions.append(option)
+
+    # Sync options_manager ID counter
+    from models.options import options_manager
+    if player.options_positions:
+        options_manager.next_option_id = max(o.id for o in player.options_positions) + 1
 
     return market, player, state.get("seed")
 

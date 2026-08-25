@@ -205,8 +205,8 @@ def display_market_analysis(market) -> Panel:
         hints.append("😰 Fear is dominating market sentiment")
 
     # Crisis hints
-    if market.crisis_system.active_crises:
-        hints.append(f"⚠️ {len(market.crisis_system.active_crises)} crisis event(s) still affecting markets")
+    if market.crisis_system.active_crisis:
+        hints.append(f"⚠️ Crisis still affecting markets: {market.crisis_system.active_crisis.name}")
 
     # Correlation hints
     if market.psychology.herd_strength > 0.8:

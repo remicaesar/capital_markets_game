@@ -14,7 +14,7 @@ class Company:
     sector: str
     price: float
     trend_long: int
-    volatility: float = field(default_factory=lambda: random.uniform(0.02, 0.08))
+    volatility: float = field(default_factory=lambda: random.uniform(0.01, 0.04))
     beta: float = field(default_factory=lambda: random.uniform(0.6, 1.8))
     trend_short: int = 0
     price_history: List[float] = field(default_factory=list)
@@ -94,12 +94,12 @@ class Company:
         growth_per_turn = self.growth_rate / 50
         change += growth_per_turn
 
-        # 4. Psychology effects
+        # 4. Psychology effects (dampened to avoid extreme swings)
         psych_multiplier = 1.0
         if psychology.fear_greed_index > 80:  # Extreme greed
-            psych_multiplier = 1.3 if change > 0 else 0.7
+            psych_multiplier = 1.15 if change > 0 else 0.85
         elif psychology.fear_greed_index < 20:  # Extreme fear
-            psych_multiplier = 0.7 if change > 0 else 1.5
+            psych_multiplier = 0.85 if change > 0 else 1.25
 
         change *= psych_multiplier
 
@@ -118,11 +118,12 @@ class Company:
         random_shock = random.gauss(0, self.volatility * regime_mult["volatility_mult"])
         change += random_shock
 
-        # 8. Herd behavior at high strength
+        # 8. Herd behavior at high strength (dampened)
         if psychology.herd_strength > 0.7:
-            change *= (1 + psychology.herd_strength - 0.7)
+            change *= (1 + (psychology.herd_strength - 0.7) * 0.5)
 
-        # 9. Apply the change
+        # 9. Clamp max daily change to ±8% and apply
+        change = max(-0.08, min(0.08, change))
         old_price = self.price
         self.price = max(1, round(self.price * (1 + change), 2))
         self.price_history.append(self.price)

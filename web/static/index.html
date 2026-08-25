@@ -53,6 +53,9 @@
                                 <th class="tooltip-trigger" data-tooltip="Price momentum over recent turns. Positive = upward trend, Negative = downward trend">MOM%</th>
                                 <th class="tooltip-trigger" data-tooltip="Trading volume. Higher volume = more liquid, easier to trade large positions">VOL</th>
                                 <th class="tooltip-trigger" data-tooltip="Volatility vs market. Beta > 1 = more volatile, Beta < 1 = more stable">BETA</th>
+                                <th class="tooltip-trigger" data-tooltip="Price-to-Earnings ratio. Lower = cheaper relative to earnings. Compare within same sector.">P/E</th>
+                                <th class="tooltip-trigger" data-tooltip="Annual earnings growth rate. Higher growth justifies higher P/E.">GRWTH</th>
+                                <th class="tooltip-trigger" data-tooltip="Company debt level. High debt = more vulnerable in crashes.">DEBT</th>
                                 <th class="tooltip-trigger" data-tooltip="Current price trend indicator based on moving averages">TREND</th>
                             </tr>
                         </thead>
@@ -267,6 +270,22 @@
         </footer>
     </div>
 
+    <!-- Tutorial Overlay -->
+    <div id="tutorial-overlay" class="tutorial-overlay hidden">
+        <div id="tutorial-spotlight" class="tutorial-spotlight"></div>
+        <div id="tutorial-tooltip" class="tutorial-tooltip">
+            <div class="tutorial-step-counter">
+                <span id="tutorial-step-num">1</span>/<span id="tutorial-step-total">7</span>
+            </div>
+            <div id="tutorial-title" class="tutorial-title"></div>
+            <div id="tutorial-text" class="tutorial-text"></div>
+            <div class="tutorial-buttons">
+                <button id="btn-tutorial-skip" class="tutorial-btn skip">SKIP TUTORIAL</button>
+                <button id="btn-tutorial-next" class="tutorial-btn next">NEXT</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Start Screen -->
     <div id="start-screen" class="start-screen hidden">
         <div class="start-content">
@@ -274,6 +293,7 @@
             <p class="tagline">An ultra-realistic stock market simulation</p>
             <div class="start-buttons">
                 <button id="btn-start-new" class="start-btn primary">NEW GAME</button>
+                <button id="btn-start-tutorial" class="start-btn primary tutorial-start-btn">NEW GAME + TUTORIAL</button>
                 <button id="btn-start-load" class="start-btn secondary">LOAD GAME</button>
             </div>
             <div id="saves-list" class="saves-list hidden">
