@@ -42,3 +42,13 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Claude Code local state
+.claude/
+
+# Test/tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Playwright MCP scratch output
+.playwright-mcp/
