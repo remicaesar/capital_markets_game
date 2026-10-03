@@ -142,6 +142,10 @@ class Player:
                 + self.options_value(market)
                 - self.short_position_value(market))
 
+    def is_bankrupt(self, market: "Market") -> bool:
+        """Single source of truth for the bankruptcy end condition: net worth <= 0."""
+        return self.net_worth(market) <= 0
+
     def total_return_pct(self, market: "Market") -> float:
         return ((self.net_worth(market) - self.starting_cash) / self.starting_cash) * 100
 

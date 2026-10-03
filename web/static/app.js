@@ -510,7 +510,7 @@ function drawPerformanceChart() {
     const chartHeight = canvas.height - padding * 2;
 
     // Convert net worth to percentage returns for comparison
-    const startingValue = data[0] || 10000;
+    const startingValue = data[0];
     const playerReturns = data.map(v => ((v - startingValue) / startingValue) * 100);
 
     // Combine both series to find the range
@@ -1220,6 +1220,11 @@ function updateFullUI(state) {
     updatePsychology(state.psychology);
     updateStats(state.player);
     updateNews(state.news);
+
+    // A finished game takes no more trades or turns (the server rejects them too)
+    const finished = Boolean(state.game_over);
+    document.getElementById('btn-execute').disabled = finished;
+    document.getElementById('btn-next-turn').disabled = finished;
 }
 
 // ============================================================================
@@ -1374,7 +1379,7 @@ async function handleNextTurn() {
 
         // Check for game over
         if (response.game_over) {
-            showGameOver(response.final_stats);
+            showGameOver(response.final_stats, response.state.game_over_reason);
         }
     } catch (error) {
         showTradeMessage(`Failed to advance turn: ${error.message}`, true);
@@ -1417,6 +1422,11 @@ async function handleLoadGame(slot) {
         updateTradeHistory();
         showGameScreen();
         showTradeMessage(`Game loaded from '${slot}'`);
+
+        // A finished save loads finished: show its results instead of a live game
+        if (response.state.game_over && response.final_stats) {
+            showGameOver(response.final_stats, response.state.game_over_reason);
+        }
     } catch (error) {
         showError(`Failed to load game: ${error.message}`);
     }
@@ -1472,11 +1482,17 @@ function showGameScreen() {
     document.getElementById('game-container').classList.remove('hidden');
 }
 
-function showGameOver(stats) {
+function showGameOver(stats, reason) {
     const modal = document.getElementById('game-over-modal');
     const container = document.getElementById('final-stats');
     
+    const bankrupt = reason === 'bankrupt';
+    const bankruptBanner = bankrupt
+        ? `<div class="final-stat-row"><span class="value negative">You went bankrupt - your net worth fell to zero or below.</span></div>`
+        : '';
+
     container.innerHTML = `
+        ${bankruptBanner}
         <div class="final-stat-row">
             <span class="label">Final Net Worth:</span>
             <span class="value ${stats.total_return_pct >= 0 ? 'positive' : 'negative'}">${formatCurrency(stats.final_net_worth)}</span>

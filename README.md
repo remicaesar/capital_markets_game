@@ -8,7 +8,7 @@ A stock market simulator you play over 50 turns, built to make the *mechanics* o
 markets visible: regime shifts, crowd psychology, algorithmic counterparties, margin
 calls, market impact, and options decay — all as readable Python you can step through.
 
-Ten companies across five sectors. You start with $10,000. Beating the index is
+Ten companies across five sectors. You start with $25,000. Beating the index is
 harder than it looks, and the code shows you exactly why.
 
 Plays in the terminal or the browser.
@@ -28,7 +28,7 @@ Plays in the terminal or the browser.
 └────────────┴──────────┴─────────┴────────┴───────┴───────┴──────┴────────┘
 
 ╭──────── 📋 Advanced Stats ────────╮   ╭─────── 🎭 Market Sentiment ───────╮
-│ 💰 Cash: $10,000.00               │   │ 🧠 Market Psychology              │
+│ 💰 Cash: $25,000.00               │   │ 🧠 Market Psychology              │
 │ 📊 Long Positions: $0.00          │   │ 😐 Neutral (50/100)               │
 ╰───────────────────────────────────╯   ╰───────────────────────────────────╯
 ```

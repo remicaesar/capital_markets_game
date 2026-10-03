@@ -29,25 +29,48 @@ class GameSession:
     player: Player
     seed: Optional[int]
     news_history: List[str]
+    # None while playing; "bankrupt" or "completed" once the game is finished
+    game_over_reason: Optional[str] = None
 
 
 class GameManager:
     """Manages multiple game sessions"""
 
-    def __init__(self):
+    def __init__(self, store: Optional[SessionStore] = None):
         self.sessions: Dict[str, GameSession] = {}
-        self.store = SessionStore()
+        self.store = store if store is not None else SessionStore()
         self._restore_sessions()
 
     def _persist_session(self, session: GameSession):
         """Serialize and persist a session to SQLite"""
         try:
-            state = serialize_game_state(session.market, session.player, session.seed)
+            state = serialize_game_state(session.market, session.player, session.seed,
+                                         session.game_over_reason)
             self.store.save_session(
                 session.game_id, state, session.news_history, session.seed
             )
         except Exception as e:
             logger.error(f"Failed to persist session {session.game_id}: {e}")
+
+    @staticmethod
+    def _restored_game_over_reason(state: Dict[str, Any], market: Market) -> Optional[str]:
+        """
+        The game-over reason recorded in a serialized state.
+
+        It is never re-derived from net worth: a live game can sit at net worth <= 0
+        mid-turn, before margin calls and dividends run. Only legacy states written
+        before the field existed are derived, and bankruptcy did not end a game then,
+        so the one finished state they can describe is a completed one.
+        """
+        if "game_over_reason" in state:
+            return state["game_over_reason"]
+        return "completed" if market.turn > MAX_TURNS else None
+
+    def _game_over_rejection(self, session: GameSession) -> Optional[str]:
+        """Message to reject an action on a finished game, or None while it is live."""
+        if session.game_over_reason is not None or session.market.turn > MAX_TURNS:
+            return "Game is over - no further actions are allowed"
+        return None
 
     def _restore_sessions(self):
         """Restore all sessions from SQLite on startup"""
@@ -63,6 +86,7 @@ class GameManager:
                     player=player,
                     seed=seed,
                     news_history=data.get("news_history", []),
+                    game_over_reason=self._restored_game_over_reason(data["state"], market),
                 )
                 self.sessions[game_id] = session
                 restored += 1
@@ -262,7 +286,8 @@ class GameManager:
             "player": player_stats,
             "psychology": psychology,
             "news": session.news_history[-5:],  # Last 5 news items
-            "game_over": market.turn > MAX_TURNS,
+            "game_over": market.turn > MAX_TURNS or session.game_over_reason is not None,
+            "game_over_reason": session.game_over_reason,
             "market_return_history": market_returns,
         }
 
@@ -270,6 +295,10 @@ class GameManager:
         """Execute a trading action"""
         market = session.market
         player = session.player
+
+        rejection = self._game_over_rejection(session)
+        if rejection:
+            return False, rejection
 
         if not isinstance(shares, int) or isinstance(shares, bool) or shares <= 0:
             return False, "Share count must be a positive whole number"
@@ -353,6 +382,10 @@ class GameManager:
         market = session.market
         player = session.player
 
+        # A finished game (bankrupt or past the final turn) never advances again
+        if session.game_over_reason is not None:
+            return [], True, self._calculate_final_stats(market, player, session.seed, session.game_over_reason)
+
         # Suppress console output during turn processing
         import io
         import sys
@@ -367,6 +400,17 @@ class GameManager:
 
             # Check for margin calls
             margin_call_events = player.check_margin_call(market)
+
+            # Bankruptcy ends the game immediately, after margin-call handling
+            if player.is_bankrupt(market):
+                session.game_over_reason = "bankrupt"
+                news_events = margin_call_events + [
+                    "BANKRUPT: your net worth has fallen to zero or below. Game over."
+                ]
+                session.news_history.extend(news_events)
+                final_stats = self._calculate_final_stats(market, player, session.seed, "bankrupt")
+                self._persist_session(session)
+                return news_events, True, final_stats
 
             # Advance turn and get news
             # Allow advancing through turn 50 (the last playable turn)
@@ -397,7 +441,8 @@ class GameManager:
             final_stats = None
 
             if game_over:
-                final_stats = self._calculate_final_stats(market, player, session.seed)
+                session.game_over_reason = "completed"
+                final_stats = self._calculate_final_stats(market, player, session.seed, "completed")
 
             self._persist_session(session)
             return news_events, game_over, final_stats
@@ -405,7 +450,15 @@ class GameManager:
         finally:
             sys.stdout = old_stdout
 
-    def _calculate_final_stats(self, market: Market, player: Player, seed: Optional[int]) -> Dict[str, Any]:
+    def final_stats_for(self, session: GameSession) -> Optional[Dict[str, Any]]:
+        """Final statistics for a finished game, or None while it is live"""
+        if self._game_over_rejection(session) is None:
+            return None
+        return self._calculate_final_stats(session.market, session.player, session.seed,
+                                           session.game_over_reason or "completed")
+
+    def _calculate_final_stats(self, market: Market, player: Player, seed: Optional[int],
+                               reason: str = "completed") -> Dict[str, Any]:
         """Calculate final game statistics"""
         worth = player.net_worth(market)
         ret = player.total_return_pct(market)
@@ -420,7 +473,10 @@ class GameManager:
         alpha = ret - market_return
 
         # Performance rating
-        if sharpe > 2.0 and alpha > 20:
+        if reason == "bankrupt":
+            rating = "BANKRUPT"
+            message = "Your losses wiped out your net worth."
+        elif sharpe > 2.0 and alpha > 20:
             rating = "LEGENDARY"
             message = "You've mastered the markets!"
         elif sharpe > 1.5 and alpha > 10:
@@ -450,12 +506,14 @@ class GameManager:
             "total_fees_paid": round(player.total_fees_paid, 2),
             "rating": rating,
             "message": message,
+            "game_over_reason": reason,
             "seed": seed
         }
 
     def save_game_to_file(self, session: GameSession, slot: str = "websave") -> str:
         """Save game to file"""
-        path = save_game(session.market, session.player, session.seed, slot)
+        path = save_game(session.market, session.player, session.seed, slot,
+                         session.game_over_reason)
         return str(path)
 
     def load_game_from_file(self, slot: str) -> Tuple[Optional[str], Optional[GameSession], Optional[str]]:
@@ -484,7 +542,9 @@ class GameManager:
                 market=market,
                 player=player,
                 seed=seed,
-                news_history=[]
+                news_history=[],
+                # A finished save loads finished, never as a live game
+                game_over_reason=self._restored_game_over_reason(state, market),
             )
 
             self.sessions[game_id] = session
@@ -503,6 +563,10 @@ class GameManager:
         """Place a limit order, stop loss, or take profit order"""
         market = session.market
         player = session.player
+
+        rejection = self._game_over_rejection(session)
+        if rejection:
+            return False, rejection, {}
 
         # Suppress console output
         import io
@@ -537,6 +601,10 @@ class GameManager:
     def buy_option(self, session: GameSession, company_name: str, option_type: str,
                    strike_price: float, contracts: int) -> Tuple[bool, str, Dict]:
         """Buy a call or put option"""
+        rejection = self._game_over_rejection(session)
+        if rejection:
+            return False, rejection, {}
+
         # Suppress console output
         import io
         import sys
@@ -555,6 +623,10 @@ class GameManager:
 
     def exercise_option(self, session: GameSession, option_id: int) -> Tuple[bool, str]:
         """Exercise an option"""
+        rejection = self._game_over_rejection(session)
+        if rejection:
+            return False, rejection
+
         # Suppress console output
         import io
         import sys
@@ -571,6 +643,10 @@ class GameManager:
 
     def sell_option(self, session: GameSession, option_id: int) -> Tuple[bool, str]:
         """Sell an option back to market"""
+        rejection = self._game_over_rejection(session)
+        if rejection:
+            return False, rejection
+
         # Suppress console output
         import io
         import sys

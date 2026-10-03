@@ -6,12 +6,19 @@ sets the prices it actually cares about by hand. Tests that assert on money shou
 never depend on what the RNG happened to produce.
 """
 
+import os
 import random
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+# Save files and the web session DB live under ~/.capital_markets_game, resolved from
+# HOME at import time. Point HOME at a throwaway directory before anything imports
+# them, so no test can read or write the player's real saves or sessions.db.
+os.environ["HOME"] = tempfile.mkdtemp(prefix="cmg-test-home-")
 
 # Make the project importable when pytest is run from the repo root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

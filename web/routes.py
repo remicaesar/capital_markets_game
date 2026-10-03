@@ -124,7 +124,8 @@ async def load_game(request: LoadGameRequest):
         success=True,
         message=f"Game loaded from slot '{request.slot}'",
         game_id=game_id,
-        state=state
+        state=state,
+        final_stats=game_manager.final_stats_for(session)
     )
 
 
