@@ -39,7 +39,7 @@ codebase were silent by construction, and only a red-then-green check catches th
 
 ### Core Game Loop
 
-`main.py` runs the CLI game loop. Each turn: player acts → dividends/fees → metrics update → margin call check → `market.advance_turn()` → display news.
+`main.py` runs the CLI game loop. Each turn: player acts → dividends/fees → metrics update → margin call check → `market.advance_turn()` → display news. If net worth is <= 0 after margin-call handling (`Player.is_bankrupt`), the game ends immediately as BANKRUPT in both CLI and web (web exposes `game_over_reason`: `"bankrupt"` | `"completed"`).
 
 `market.advance_turn()` in `models/market.py` orchestrates all subsystems: regime changes → algorithmic trading → news generation → crisis check → psychology update → per-company price updates.
 
@@ -59,7 +59,7 @@ codebase were silent by construction, and only a red-then-green check catches th
   declare is silently stripped from the payload. Adding a field to `game_manager.get_game_state()`
   is not enough; declare it on the matching model or the frontend never sees it.
 
-- **config/**: `settings.py` has all game constants (initial cash $10K, transaction fee 1%, margin requirements, slippage, difficulty params). `company_data.py` defines company names per sector.
+- **config/**: `settings.py` has all game constants (initial cash $25K, transaction fee 1%, margin requirements, slippage, difficulty params). `company_data.py` defines company names per sector.
 
 ### Key Design Patterns
 

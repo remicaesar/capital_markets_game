@@ -44,12 +44,21 @@ def get_save_path(slot: str = "autosave") -> Path:
     return SAVE_DIR / f"{slot}.json"
 
 
-def serialize_game_state(market: "Market", player: "Player", seed: Optional[int] = None) -> Dict[str, Any]:
-    """Serialize complete game state to dictionary"""
+def serialize_game_state(market: "Market", player: "Player", seed: Optional[int] = None,
+                         game_over_reason: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Serialize complete game state to dictionary.
+
+    `game_over_reason` is None while the game is live, else "bankrupt" or "completed".
+    It is stored rather than re-derived on load: net worth can dip to zero or below
+    mid-turn in a live game, so the market and player state cannot tell a bankrupt
+    game from a live one.
+    """
     return {
         "version": 1,
         "timestamp": datetime.now().isoformat(),
         "seed": seed,
+        "game_over_reason": game_over_reason,
         "market": serialize_market(market),
         "player": serialize_player(player),
     }
@@ -167,9 +176,9 @@ def serialize_player(player: "Player") -> Dict[str, Any]:
 
 
 def save_game(market: "Market", player: "Player", seed: Optional[int] = None,
-              slot: str = "autosave") -> Path:
+              slot: str = "autosave", game_over_reason: Optional[str] = None) -> Path:
     """Save game state to file"""
-    state = serialize_game_state(market, player, seed)
+    state = serialize_game_state(market, player, seed, game_over_reason)
     save_path = get_save_path(slot)
 
     with open(save_path, 'w') as f:

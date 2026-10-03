@@ -34,7 +34,7 @@ from ui.display import (
     create_psychology_panel
 )
 from ui.input_helpers import get_int_input, get_company_input
-from config.settings import MAX_TURNS, TRANSACTION_FEE
+from config.settings import MAX_TURNS, TRANSACTION_FEE, SHORT_MARGIN_REQUIREMENT
 from utils.save_manager import (
     save_game, load_game, deserialize_game_state,
     list_saves, delete_save, get_save_path, validate_slot, InvalidSlotName
@@ -182,7 +182,7 @@ def main():
         console.print(f"[dim]Game seed: {game_seed}[/dim]")
 
     welcome = """
-🎯 Goal: Beat the market with $10,000 starting capital!
+🎯 Goal: Beat the market with $25,000 starting capital!
 ⚠️ WARNING: This market is ULTRA REALISTIC:
    • News can be misleading or have delayed effects
    • Algorithmic traders compete against you
@@ -200,6 +200,7 @@ def main():
         console.print(f"[dim]Tip: Use --seed {game_seed} to replay this exact market[/dim]")
         input("\nPress Enter to begin your trading career...")
 
+    bankrupt = False
     while market.turn <= MAX_TURNS:
         console.clear()
 
@@ -264,7 +265,7 @@ def main():
 
             # Calculate max shortable shares based on margin
             available_margin = player.available_margin(market)
-            margin_per_share = company.price * 0.5  # SHORT_MARGIN_REQUIREMENT
+            margin_per_share = company.price * SHORT_MARGIN_REQUIREMENT
             fee_per_share = company.price * 0.015  # locate + transaction fee
             cost_per_share = margin_per_share + fee_per_share
             max_shares = int(available_margin // cost_per_share) if cost_per_share > 0 else 0
@@ -394,6 +395,18 @@ def main():
                 console.print(f"[red]{event}[/red]")
             input("\nPress Enter to continue...")
 
+        # Bankruptcy ends the game immediately, through the same end-of-game path
+        if player.is_bankrupt(market):
+            bankrupt = True
+            console.print(Panel(
+                "[bold red]💀 BANKRUPT![/bold red]\n"
+                "Your net worth has fallen to zero or below after margin call handling.\n"
+                "The game ends here.",
+                style="red"
+            ))
+            input("\nPress Enter to see your final results...")
+            break
+
         # `<=` not `<`: on the final turn the clock still has to tick over to
         # MAX_TURNS + 1, otherwise the `while` condition never goes false and the
         # game loops on turn 50 forever without ever reaching the results screen.
@@ -432,7 +445,9 @@ def main():
     alpha = ret - market_return
 
     # Performance rating
-    if sharpe > 2.0 and alpha > 20:
+    if bankrupt:
+        msg, style = "💀 BANKRUPT! Your losses wiped out your net worth.", "bold red"
+    elif sharpe > 2.0 and alpha > 20:
         msg, style = "🏅 LEGENDARY TRADER! You've mastered the markets!", "bold green"
     elif sharpe > 1.5 and alpha > 10:
         msg, style = "🏆 EXPERT PERFORMANCE! Outstanding risk-adjusted returns!", "bold cyan"

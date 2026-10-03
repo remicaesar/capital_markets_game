@@ -9,6 +9,7 @@ negative, so the check always passed. Over the HTTP API this was a money printer
 import pytest
 from pydantic import ValidationError
 
+from config.settings import INITIAL_CASH
 from web.schemas import ActionRequest, BuyOptionRequest, PlaceOrderRequest
 
 
@@ -109,4 +110,4 @@ def test_valid_buy_still_works(market, player, company):
     """The guard must not break the happy path."""
     assert player.buy(market, company, 10) is True
     assert player.portfolio[company.name][0] == 10
-    assert player.cash < 10_000
+    assert player.cash < INITIAL_CASH

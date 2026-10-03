@@ -177,6 +177,7 @@ class GameState(BaseModel):
     psychology: PsychologyState
     news: List[str]
     game_over: bool = False
+    game_over_reason: Optional[str] = None
     market_return_history: List[float] = []
 
 
@@ -224,6 +225,7 @@ class LoadGameResponse(BaseModel):
     message: str
     game_id: Optional[str] = None
     state: Optional[GameState] = None
+    final_stats: Optional[Dict[str, Any]] = None  # set when the loaded game is finished
 
 
 class PlaceOrderResponse(BaseModel):

@@ -8,7 +8,7 @@ A stock market simulator you play over 50 turns, built to make the *mechanics* o
 markets visible: regime shifts, crowd psychology, algorithmic counterparties, margin
 calls, market impact, and options decay — all as readable Python you can step through.
 
-Ten companies across five sectors. You start with $10,000. Beating the index is
+Ten companies across five sectors. You start with $25,000. Beating the index is
 harder than it looks, and the code shows you exactly why.
 
 Plays in the terminal or the browser.
@@ -28,7 +28,7 @@ Plays in the terminal or the browser.
 └────────────┴──────────┴─────────┴────────┴───────┴───────┴──────┴────────┘
 
 ╭──────── 📋 Advanced Stats ────────╮   ╭─────── 🎭 Market Sentiment ───────╮
-│ 💰 Cash: $10,000.00               │   │ 🧠 Market Psychology              │
+│ 💰 Cash: $25,000.00               │   │ 🧠 Market Psychology              │
 │ 📊 Long Positions: $0.00          │   │ 😐 Neutral (50/100)               │
 ╰───────────────────────────────────╯   ╰───────────────────────────────────╯
 ```
@@ -124,6 +124,9 @@ average volume. Turning a profit means clearing all of it.
 You are graded on **alpha** (return over the market) and **Sharpe ratio**, not raw
 return. Doubling your money in a market that tripled is not a good game.
 
+If your net worth falls to zero or below, the game ends immediately as bankrupt —
+in both the terminal and the browser.
+
 ---
 
 ## Layout
@@ -168,8 +171,8 @@ pytest
 
 The suite concentrates on the money maths, because that is where mistakes are silent —
 a wrong number looks exactly like a right one. It covers short-position accounting,
-options settlement at expiry, share-count validation, save-path safety and turn-loop
-termination.
+options settlement at expiry, share-count validation, save-path safety, turn-loop
+termination and the bankruptcy ending.
 
 Every test in it was checked by reverting the fix it guards and confirming the suite
 goes red. A test that passes both before and after a fix is not a test.
@@ -194,7 +197,8 @@ defeat the point.
   that decays with the square root of remaining turns — not Black-Scholes.
 - **Sector correlations are static.** They do not widen in bear markets the way real
   ones do.
-- **A margin call can drive cash negative.** There is no bankruptcy state yet.
+- **A margin call can drive cash negative.** The game continues as long as net worth
+  stays above zero.
 
 ---
 
