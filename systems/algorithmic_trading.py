@@ -2,7 +2,6 @@
 Algorithmic trading simulation with different strategies
 """
 
-import random
 import numpy as np
 from typing import Dict, List, Any
 

@@ -4,10 +4,11 @@ Save/Load system for game state persistence
 
 import json
 import os
+import random
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 # Default save directory
 SAVE_DIR = Path.home() / ".capital_markets_game" / "saves"
@@ -68,6 +69,7 @@ def serialize_market(market: "Market") -> Dict[str, Any]:
     """Serialize market state"""
     return {
         "turn": market.turn,
+        "rng_state": serialize_rng_state(market.rng),
         "market_history": market.market_history,
         "return_history": market.return_history,
         "companies": {
@@ -110,6 +112,27 @@ def serialize_market(market: "Market") -> Dict[str, Any]:
             "crisis_history": market.crisis_system.crisis_history,
         },
     }
+
+
+def serialize_rng_state(rng: random.Random) -> List[Any]:
+    """random.Random.getstate() as JSON: [version, [internal state...], gauss_next]."""
+    version, internal, gauss_next = rng.getstate()
+    return [version, list(internal), gauss_next]
+
+
+def restore_rng(rng_state: Optional[List[Any]], seed: Optional[int]) -> random.Random:
+    """
+    The random source a loaded game continues from.
+
+    A save carries the exact stream position it was written at. Saves from before that
+    was stored fall back to reseeding from the integer seed, which is what loading did
+    then (and so replays turn 1's stream), or to a fresh source when there is no seed.
+    """
+    rng = random.Random(seed)
+    if rng_state is not None:
+        version, internal, gauss_next = rng_state
+        rng.setstate((version, tuple(internal), gauss_next))
+    return rng
 
 
 def serialize_company(company: "Company") -> Dict[str, Any]:
@@ -211,6 +234,7 @@ def deserialize_game_state(state: Dict[str, Any]) -> tuple:
 
     # Create empty market (skip company generation)
     market = Market.__new__(Market)
+    market.rng = restore_rng(state["market"].get("rng_state"), state.get("seed"))
     market.companies = {}
     market.turn = state["market"]["turn"]
     market.market_history = state["market"]["market_history"]

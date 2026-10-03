@@ -3,13 +3,11 @@ Game session management for the web UI
 """
 
 import uuid
-import random
 import logging
-import numpy as np
 from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass
 
-from models.market import Market
+from models.market import Market, new_game_rng
 from models.player import Player
 from config.settings import MAX_TURNS, TRANSACTION_FEE, SHORT_MARGIN_REQUIREMENT, SHORT_LOCATE_FEE
 from utils.save_manager import (
@@ -95,20 +93,12 @@ class GameManager:
         if restored:
             logger.info(f"Restored {restored} session(s) from SQLite")
 
-    def _initialize_random(self, seed: Optional[int] = None) -> int:
-        """Initialize random number generators with seed"""
-        if seed is None:
-            seed = random.randint(0, 2**31 - 1)
-        random.seed(seed)
-        np.random.seed(seed)
-        return seed
-
     def create_game(self, seed: Optional[int] = None) -> Tuple[str, GameSession]:
         """Create a new game session"""
         game_id = str(uuid.uuid4())[:8]
-        actual_seed = self._initialize_random(seed)
+        actual_seed, rng = new_game_rng(seed)
 
-        market = Market()
+        market = Market(rng)
         player = Player()
 
         session = GameSession(
@@ -530,11 +520,8 @@ class GameManager:
             return None, None, f"Save '{slot}' not found"
 
         try:
+            # The market comes back with the random stream it was saved with
             market, player, seed = deserialize_game_state(state)
-
-            # Re-initialize RNG
-            if seed is not None:
-                self._initialize_random(seed)
 
             game_id = str(uuid.uuid4())[:8]
             session = GameSession(

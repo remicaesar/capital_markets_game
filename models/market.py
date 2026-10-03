@@ -3,8 +3,9 @@ Main market simulation with all systems integrated
 """
 
 import random
+import secrets
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.columns import Columns
@@ -22,8 +23,19 @@ from systems.crisis_events import CrisisEventSystem
 console = Console()
 
 
+def new_game_rng(seed: Optional[int] = None) -> Tuple[int, random.Random]:
+    """Return the seed a game plays from (a fresh one when none is given) and its rng."""
+    if seed is None:
+        seed = secrets.randbelow(2**31)
+    return seed, random.Random(seed)
+
+
 class Market:
-    def __init__(self):
+    def __init__(self, rng: Optional[random.Random] = None):
+        # Every draw this game makes comes from its own rng, never the process-wide
+        # `random` state: concurrent web games would otherwise disturb each other, and
+        # a save could not carry the exact stream the game was playing from.
+        self.rng = rng if rng is not None else random.Random()
         self.companies: Dict[str, Company] = {}
         self.turn = 1
         self.market_history: List[float] = []
@@ -39,7 +51,7 @@ class Market:
 
         # Initialize
         self._generate_companies()
-        self.hidden_factors.initialize(self.companies)
+        self.hidden_factors.initialize(self.companies, self.rng)
 
     def _generate_companies(self):
         """Generate companies for each sector"""
@@ -52,10 +64,10 @@ class Market:
 
             for j in range(count):
                 name = available_names[j] if j < len(available_names) else f"{sector}Corp{j + 1}"
-                price = round(random.uniform(20, 150), 2)
-                trend_long = random.choice([-1, 1])
+                price = round(self.rng.uniform(20, 150), 2)
+                trend_long = self.rng.choice([-1, 1])
 
-                self.companies[name] = Company(name, sector, price, trend_long)
+                self.companies[name] = Company(name, sector, price, trend_long, rng=self.rng)
 
     def get_market_cap(self) -> float:
         """Calculate total market capitalization"""
@@ -81,9 +93,9 @@ class Market:
         impacts = {}
         for company, action in self.hidden_factors.smart_money_positions.items():
             if action == "accumulating":
-                impacts[company] = random.uniform(0.01, 0.03)
+                impacts[company] = self.rng.uniform(0.01, 0.03)
             else:  # distributing
-                impacts[company] = random.uniform(-0.03, -0.01)
+                impacts[company] = self.rng.uniform(-0.03, -0.01)
         return impacts
 
     def advance_turn(self, player):
@@ -106,7 +118,8 @@ class Market:
         market_impact = 0.0
 
         # Generate 1-2 news events with clear effects
-        news_events = self.news_system.generate_turn_news(self.regime.current, self.psychology)
+        news_events = self.news_system.generate_turn_news(self.regime.current, self.psychology,
+                                                           self.rng)
 
         for event in news_events:
             # Apply the effect directly - no hidden interpretations
@@ -125,7 +138,8 @@ class Market:
             displayed_events.append(f"⚠️ WARNING: {warning.message}")
 
         # 5. Check for crisis events
-        crisis = self.crisis_system.check_for_crisis(self.regime.current, self.return_history)
+        crisis = self.crisis_system.check_for_crisis(self.regime.current, self.return_history,
+                                                    self.rng)
         if crisis:
             displayed_events.insert(0, f"🚨 {crisis.headline}")
             displayed_events.insert(1, f"  → {crisis.context}")
@@ -169,7 +183,7 @@ class Market:
 
             # Update price with all factors
             change = company.update_price(base_change, regime_params, algo_pressure,
-                                          self.psychology, self.hidden_factors)
+                                          self.psychology, self.hidden_factors, self.rng)
             company_changes[company.name] = change
 
         # 10. Update market tracking
@@ -179,17 +193,17 @@ class Market:
 
         # 11. Update psychology
         market_volatility = np.std([c for c in company_changes.values()])
-        self.psychology.update(market_return, market_volatility, self.regime.current)
+        self.psychology.update(market_return, market_volatility, self.regime.current, self.rng)
 
         # 12. Update hidden factors - rotate smart money positions occasionally
-        if random.random() < 0.2:
+        if self.rng.random() < 0.2:
             if self.hidden_factors.smart_money_positions:
-                to_remove = random.choice(list(self.hidden_factors.smart_money_positions.keys()))
+                to_remove = self.rng.choice(list(self.hidden_factors.smart_money_positions.keys()))
                 del self.hidden_factors.smart_money_positions[to_remove]
 
-            company = random.choice(list(self.companies.keys()))
+            company = self.rng.choice(list(self.companies.keys()))
             if company not in self.hidden_factors.smart_money_positions:
-                action = "accumulating" if random.random() > 0.5 else "distributing"
+                action = "accumulating" if self.rng.random() > 0.5 else "distributing"
                 self.hidden_factors.smart_money_positions[company] = action
 
         # 13. Add regime change message at top if any

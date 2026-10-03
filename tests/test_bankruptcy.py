@@ -104,8 +104,8 @@ def test_cli_ends_the_game_on_bankruptcy(monkeypatch):
     """Drive main() in-process with a player who starts at exactly zero net worth."""
     markets = []
 
-    def recording_market():
-        m = Market()
+    def recording_market(*args, **kwargs):
+        m = Market(*args, **kwargs)
         markets.append(m)
         return m
 
