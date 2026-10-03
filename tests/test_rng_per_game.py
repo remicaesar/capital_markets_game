@@ -8,12 +8,11 @@ below compare whole trajectories (news plus every company's price each turn), so
 any draw taken from the wrong stream shows up as a divergence.
 """
 
-import ast
 import io
 import json
 import random
-from pathlib import Path
 
+import numpy as np
 import pytest
 from rich.console import Console
 
@@ -25,7 +24,6 @@ from utils.save_manager import deserialize_game_state, serialize_game_state
 from web.game_manager import GameManager
 from web.session_store import SessionStore
 
-ROOT = Path(__file__).resolve().parent.parent
 TURNS = 8
 
 
@@ -226,44 +224,23 @@ def test_cli_and_web_play_the_same_game_from_the_same_seed(gm, monkeypatch):
 
 # --- no game code draws from the process-wide random state -------------------
 
-GAME_CODE = ["main.py", "models", "systems", "utils", "web", "ui", "config"]
+def _churn_global_random(salt):
+    random.seed(1000 + salt)
+    np.random.seed(1000 + salt)
+    for _ in range(salt % 5 + 1):
+        random.random()
+        np.random.random()
 
 
-def _module_level_random_uses(path):
-    """`random.<anything but Random>` and `np.random`/`numpy.random` attribute uses."""
-    tree = ast.parse(path.read_text(), filename=str(path))
-    hits = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module in ("random", "numpy.random"):
-            names = {a.name for a in node.names}
-            if node.module == "numpy.random" or names - {"Random"}:
-                hits.append((node.lineno, f"from {node.module} import {sorted(names)}"))
-        if not isinstance(node, ast.Attribute):
-            continue
-        base = node.value
-        if isinstance(base, ast.Name) and base.id == "random" and node.attr != "Random":
-            hits.append((node.lineno, f"random.{node.attr}"))
-        if isinstance(base, ast.Name) and base.id in ("np", "numpy") and node.attr == "random":
-            hits.append((node.lineno, f"{base.id}.random"))
-    return hits
+def test_churning_the_process_wide_random_state_does_not_change_a_game(gm):
+    _, calm = gm.create_game(seed=7)
+    reference = _web_trajectory(gm, calm)
 
+    _churn_global_random(0)
+    _, churned = gm.create_game(seed=7)
+    trajectory = []
+    for turn in range(TURNS):
+        _churn_global_random(turn + 1)
+        trajectory.append(_web_turn(gm, churned))
 
-def _game_files():
-    for entry in GAME_CODE:
-        p = ROOT / entry
-        yield from ([p] if p.is_file() else sorted(p.rglob("*.py")))
-
-
-def test_no_game_code_uses_the_process_wide_random_state():
-    offenders = [f"{path.relative_to(ROOT)}:{line}: {what}"
-                 for path in _game_files()
-                 for line, what in _module_level_random_uses(path)]
-    assert not offenders, "draw from the game's own rng instead:\n" + "\n".join(offenders)
-
-
-def test_the_random_guard_sees_a_module_level_draw(tmp_path):
-    probe = tmp_path / "probe.py"
-    probe.write_text("import random\nimport numpy as np\n"
-                     "x = random.uniform(0, 1)\nnp.random.seed(1)\nok = random.Random(3)\n")
-    assert [what for _, what in _module_level_random_uses(probe)] == [
-        "random.uniform", "np.random"]
+    assert trajectory == reference
