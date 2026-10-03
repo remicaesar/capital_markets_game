@@ -124,6 +124,9 @@ average volume. Turning a profit means clearing all of it.
 You are graded on **alpha** (return over the market) and **Sharpe ratio**, not raw
 return. Doubling your money in a market that tripled is not a good game.
 
+If your net worth falls to zero or below, the game ends immediately as bankrupt —
+in both the terminal and the browser.
+
 ---
 
 ## Layout
@@ -194,7 +197,8 @@ defeat the point.
   that decays with the square root of remaining turns — not Black-Scholes.
 - **Sector correlations are static.** They do not widen in bear markets the way real
   ones do.
-- **A margin call can drive cash negative.** There is no bankruptcy state yet.
+- **A margin call can drive cash negative.** The game continues as long as net worth
+  stays above zero.
 
 ---
 
