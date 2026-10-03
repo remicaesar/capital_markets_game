@@ -171,8 +171,8 @@ pytest
 
 The suite concentrates on the money maths, because that is where mistakes are silent —
 a wrong number looks exactly like a right one. It covers short-position accounting,
-options settlement at expiry, share-count validation, save-path safety and turn-loop
-termination.
+options settlement at expiry, share-count validation, save-path safety, turn-loop
+termination and the bankruptcy ending.
 
 Every test in it was checked by reverting the fix it guards and confirming the suite
 goes red. A test that passes both before and after a fix is not a test.
