@@ -131,18 +131,18 @@ class AdvancedNewsSystem:
          "Forced selling pressures prices"),
     ]
 
-    def generate_news(self) -> Tuple[str, Dict]:
+    def generate_news(self, rng: random.Random) -> Tuple[str, Dict]:
         """Generate a single clear news event with context"""
 
         # 60% chance sector-specific, 40% market-wide
-        if random.random() < 0.6:
-            sector = random.choice(SECTORS)
+        if rng.random() < 0.6:
+            sector = rng.choice(SECTORS)
             # 50/50 positive or negative
-            if random.random() < 0.5:
-                headline, effect, context = random.choice(self.POSITIVE_SECTOR_NEWS[sector])
+            if rng.random() < 0.5:
+                headline, effect, context = rng.choice(self.POSITIVE_SECTOR_NEWS[sector])
                 icon = "📈"
             else:
-                headline, effect, context = random.choice(self.NEGATIVE_SECTOR_NEWS[sector])
+                headline, effect, context = rng.choice(self.NEGATIVE_SECTOR_NEWS[sector])
                 icon = "📉"
 
             return NewsEvent(
@@ -152,7 +152,7 @@ class AdvancedNewsSystem:
                 context=f"{context} ({sector} sector {'+' if effect > 0 else ''}{effect*100:.0f}%)"
             )
         else:
-            headline, effect, context = random.choice(self.MARKET_WIDE_NEWS)
+            headline, effect, context = rng.choice(self.MARKET_WIDE_NEWS)
             icon = "📈" if effect > 0 else "📉"
 
             return NewsEvent(
@@ -162,15 +162,15 @@ class AdvancedNewsSystem:
                 context=f"{context} (Market {'+' if effect > 0 else ''}{effect*100:.0f}%)"
             )
 
-    def generate_turn_news(self, regime: str, psychology) -> list:
+    def generate_turn_news(self, regime: str, psychology, rng: random.Random) -> list:
         """Generate 1-2 news events for the turn"""
         events = []
 
         # Always generate 1 event
-        events.append(self.generate_news())
+        events.append(self.generate_news(rng))
 
         # 40% chance of a second event
-        if random.random() < 0.4:
-            events.append(self.generate_news())
+        if rng.random() < 0.4:
+            events.append(self.generate_news(rng))
 
         return events

@@ -18,13 +18,12 @@ $ python main.py --new                 # Force new game (ignore autosave)
 
 import random
 import argparse
-import numpy as np
 from rich.console import Console
 from rich.panel import Panel
 from rich.columns import Columns
 from rich.table import Table
 
-from models.market import Market
+from models.market import Market, new_game_rng
 from models.player import Player
 from ui.display import (
     display_advanced_stats,
@@ -110,14 +109,9 @@ def display_saves():
     console.print(table)
 
 
-def initialize_random(seed: int = None) -> int:
-    """Initialize random number generators with seed, return the seed used"""
-    if seed is None:
-        seed = random.randint(0, 2**31 - 1)
-
-    random.seed(seed)
-    np.random.seed(seed)
-    return seed
+# Cosmetic only, and deliberately not the game's rng: reading a hint must never
+# change the market a seed produces.
+_hint_rng = random.Random()
 
 
 def main():
@@ -150,11 +144,9 @@ def main():
         save_slot = args.load
         state = load_game(save_slot)
         if state:
+            # The market comes back with the random stream it was saved with
             market, player, game_seed = deserialize_game_state(state)
             loaded_from_save = True
-            # Re-initialize RNG with saved seed for consistency
-            if game_seed is not None:
-                initialize_random(game_seed)
             console.print(f"[green]Loaded save '{save_slot}' at turn {market.turn}[/green]")
             if game_seed:
                 console.print(f"[dim]Seed: {game_seed}[/dim]")
@@ -170,14 +162,12 @@ def main():
             if not resume.startswith('n'):
                 market, player, game_seed = deserialize_game_state(state)
                 loaded_from_save = True
-                if game_seed is not None:
-                    initialize_random(game_seed)
                 console.print(f"[green]Resumed at turn {market.turn}[/green]")
 
     # Start new game if needed
     if market is None:
-        game_seed = initialize_random(args.seed)
-        market = Market()
+        game_seed, rng = new_game_rng(args.seed)
+        market = Market(rng)
         player = Player()
         console.print(f"[dim]Game seed: {game_seed}[/dim]")
 
@@ -353,7 +343,7 @@ def main():
                 "💡 Large orders move the market against you (slippage)",
                 "💡 Split large orders to reduce market impact costs"
             ]
-            console.print(Panel(random.choice(hints), title="💡 Trading Wisdom", style="cyan"))
+            console.print(Panel(_hint_rng.choice(hints), title="💡 Trading Wisdom", style="cyan"))
             input("\nPress Enter to continue...")
             continue
 

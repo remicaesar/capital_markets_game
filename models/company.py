@@ -4,8 +4,8 @@ Company entity with advanced metrics and price dynamics
 
 import random
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from dataclasses import InitVar, dataclass, field
+from typing import List, Dict, Any, Optional
 
 
 @dataclass
@@ -14,16 +14,17 @@ class Company:
     sector: str
     price: float
     trend_long: int
-    volatility: float = field(default_factory=lambda: random.uniform(0.01, 0.04))
-    beta: float = field(default_factory=lambda: random.uniform(0.6, 1.8))
+    # Fields left as None are drawn from `rng` in __post_init__
+    volatility: Optional[float] = None
+    beta: Optional[float] = None
     trend_short: int = 0
     price_history: List[float] = field(default_factory=list)
     volume_history: List[float] = field(default_factory=list)
 
     # Valuation metrics (visible to players)
-    pe_ratio: float = field(default_factory=lambda: random.uniform(8, 35))
-    growth_rate: float = field(default_factory=lambda: random.uniform(-0.02, 0.15))
-    debt_level: str = field(default_factory=lambda: random.choice(["Low", "Medium", "High"]))
+    pe_ratio: Optional[float] = None
+    growth_rate: Optional[float] = None
+    debt_level: Optional[str] = None
     earnings_per_share: float = 0.0  # Calculated from price / P/E
 
     # Technical metrics
@@ -31,15 +32,32 @@ class Company:
     relative_strength: float = 50.0
     earnings_momentum: float = 0.0
 
-    def __post_init__(self):
+    # The game's random source; only used while building the company
+    rng: InitVar[Optional[random.Random]] = None
+
+    def __post_init__(self, rng: Optional[random.Random]):
+        if rng is None:
+            rng = random.Random()
+        # Drawn in the order the old field defaults drew them, so a seed builds the same market
+        if self.volatility is None:
+            self.volatility = rng.uniform(0.01, 0.04)
+        if self.beta is None:
+            self.beta = rng.uniform(0.6, 1.8)
+        if self.pe_ratio is None:
+            self.pe_ratio = rng.uniform(8, 35)
+        if self.growth_rate is None:
+            self.growth_rate = rng.uniform(-0.02, 0.15)
+        if self.debt_level is None:
+            self.debt_level = rng.choice(["Low", "Medium", "High"])
+
         self.price_history.append(self.price)
         self.volume_history.append(1.0)  # Normalized volume
         # Calculate initial EPS from price and P/E
         self.earnings_per_share = self.price / self.pe_ratio
         # Adjust characteristics based on sector
-        self._apply_sector_characteristics()
+        self._apply_sector_characteristics(rng)
 
-    def _apply_sector_characteristics(self):
+    def _apply_sector_characteristics(self, rng: random.Random):
         """Adjust valuation metrics based on sector norms"""
         sector_profiles = {
             "Tech": {"pe_range": (15, 40), "growth_range": (0.05, 0.20), "debt_weights": [0.5, 0.35, 0.15]},
@@ -51,9 +69,9 @@ class Company:
 
         if self.sector in sector_profiles:
             profile = sector_profiles[self.sector]
-            self.pe_ratio = round(random.uniform(*profile["pe_range"]), 1)
-            self.growth_rate = round(random.uniform(*profile["growth_range"]), 3)
-            self.debt_level = random.choices(
+            self.pe_ratio = round(rng.uniform(*profile["pe_range"]), 1)
+            self.growth_rate = round(rng.uniform(*profile["growth_range"]), 3)
+            self.debt_level = rng.choices(
                 ["Low", "Medium", "High"],
                 weights=profile["debt_weights"]
             )[0]
@@ -80,7 +98,7 @@ class Company:
         return "Fair"
 
     def update_price(self, base_change: float, regime_mult: Dict, algo_pressure: float,
-                     psychology: Any, hidden_factors: Any):
+                     psychology: Any, hidden_factors: Any, rng: random.Random):
         """Advanced price update with valuation metrics"""
 
         # 1. Apply regime effects
@@ -115,7 +133,7 @@ class Company:
             change += reversion_force
 
         # 7. Volatility and randomness
-        random_shock = random.gauss(0, self.volatility * regime_mult["volatility_mult"])
+        random_shock = rng.gauss(0, self.volatility * regime_mult["volatility_mult"])
         change += random_shock
 
         # 8. Herd behavior at high strength (dampened)

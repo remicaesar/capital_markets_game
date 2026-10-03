@@ -12,7 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 # Save files and the web session DB live under ~/.capital_markets_game, resolved from
@@ -29,9 +28,7 @@ from models.player import Player  # noqa: E402
 
 @pytest.fixture
 def market():
-    random.seed(1234)
-    np.random.seed(1234)
-    return Market()
+    return Market(random.Random(1234))
 
 
 @pytest.fixture

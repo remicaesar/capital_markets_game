@@ -14,7 +14,7 @@ class MarketPsychology:
     complacency: float = 0.0
     capitulation_risk: float = 0.0
 
-    def update(self, market_return: float, volatility: float, regime: str):
+    def update(self, market_return: float, volatility: float, regime: str, rng: random.Random):
         """Update psychological indicators"""
         # Fear/Greed responds to returns
         self.fear_greed_index += market_return * 200
@@ -22,9 +22,9 @@ class MarketPsychology:
 
         # Extremes tend to reverse
         if self.fear_greed_index > 85:
-            self.fear_greed_index -= random.uniform(10, 20)
+            self.fear_greed_index -= rng.uniform(10, 20)
         elif self.fear_greed_index < 15:
-            self.fear_greed_index += random.uniform(10, 20)
+            self.fear_greed_index += rng.uniform(10, 20)
 
         self.fear_greed_index = max(0, min(100, self.fear_greed_index))
 

@@ -75,7 +75,8 @@ class CrisisEventSystem:
         self.warning_level = max(0, self.warning_level - 1)
         return None
 
-    def check_for_crisis(self, regime: str, recent_returns: List[float]) -> Optional[Crisis]:
+    def check_for_crisis(self, regime: str, recent_returns: List[float],
+                         rng: random.Random) -> Optional[Crisis]:
         """Check if a crisis triggers - probability based on visible warning level"""
 
         self.turns_since_crisis += 1
@@ -91,7 +92,7 @@ class CrisisEventSystem:
         # Base probability scales with warning level
         crisis_prob = 0.05 * self.warning_level  # 10-15% at level 2-3
 
-        if random.random() > crisis_prob:
+        if rng.random() > crisis_prob:
             return None
 
         # Determine crisis type based on conditions
@@ -100,7 +101,7 @@ class CrisisEventSystem:
             crisis = Crisis(
                 name="market_crash",
                 headline="MARKET CRASH: Panic selling triggers broad market decline!",
-                impact=random.uniform(-0.12, -0.20),
+                impact=rng.uniform(-0.12, -0.20),
                 duration=2,
                 context="Widespread fear causes investors to liquidate positions"
             )
@@ -109,7 +110,7 @@ class CrisisEventSystem:
             crisis = Crisis(
                 name="flash_correction",
                 headline="FLASH CORRECTION: Sudden selloff catches traders off guard!",
-                impact=random.uniform(-0.08, -0.15),
+                impact=rng.uniform(-0.08, -0.15),
                 duration=1,
                 context="Algorithmic trading amplifies the downturn"
             )

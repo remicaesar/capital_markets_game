@@ -2,7 +2,6 @@
 Market regime system that affects all trading dynamics
 """
 
-import random
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Optional

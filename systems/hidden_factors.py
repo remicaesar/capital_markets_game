@@ -16,19 +16,19 @@ class HiddenFactors:
     smart_money_positions: Dict[str, str] = field(default_factory=dict)
     pending_news: List[Dict[str, Any]] = field(default_factory=list)
 
-    def initialize(self, companies: Dict[str, Any]):
+    def initialize(self, companies: Dict[str, Any], rng: random.Random):
         """Set up hidden factors for all companies"""
         for name, company in companies.items():
             # True value can significantly diverge from market
-            self.true_values[name] = company.price * random.uniform(0.4, 2.5)
+            self.true_values[name] = company.price * rng.uniform(0.4, 2.5)
             # Insider sentiment predicts future moves
-            self.insider_sentiment[name] = random.uniform(-1, 1)
+            self.insider_sentiment[name] = rng.uniform(-1, 1)
             # Hidden leverage amplifies crashes
-            self.debt_levels[name] = random.uniform(0.1, 0.9)
+            self.debt_levels[name] = rng.uniform(0.1, 0.9)
 
         # Smart money takes positions before news
         num_positions = min(5, len(companies) // 4)
         for _ in range(num_positions):
-            company = random.choice(list(companies.keys()))
-            action = "accumulating" if random.random() > 0.5 else "distributing"
+            company = rng.choice(list(companies.keys()))
+            action = "accumulating" if rng.random() > 0.5 else "distributing"
             self.smart_money_positions[company] = action 

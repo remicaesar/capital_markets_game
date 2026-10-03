@@ -172,7 +172,9 @@ pytest
 The suite concentrates on the money maths, because that is where mistakes are silent —
 a wrong number looks exactly like a right one. It covers short-position accounting,
 options settlement at expiry, share-count validation, save-path safety, turn-loop
-termination and the bankruptcy ending.
+termination, the bankruptcy ending, and each game's own random stream (a seed replays
+the same game in the terminal and the browser, and a save resumes the exact stream it
+was saved with).
 
 Every test in it was checked by reverting the fix it guards and confirming the suite
 goes red. A test that passes both before and after a fix is not a test.
@@ -184,9 +186,6 @@ goes red. A test that passes both before and after a fix is not a test.
 Kept honest on purpose — this is a teaching codebase, and pretending otherwise would
 defeat the point.
 
-- **Concurrent web games share one RNG.** `random.seed()` is global, so starting a
-  second browser game perturbs the price stream of the first. Single-player use and
-  the CLI are unaffected.
 - **Unused hooks.** `HiddenFactors.insider_sentiment`, `.debt_levels` and
   `.pending_news`, along with `MarketRegime.strength` and each regime's
   `correlation_mult`, are populated and saved but not yet read by anything. They are
@@ -204,7 +203,6 @@ defeat the point.
 
 ## Roadmap
 
-- Per-session RNG so concurrent web games stay independent
 - Wire up (or remove) the unused hidden-factor hooks
 - Options and limit orders in the terminal client, for parity with the browser
 - Regime-dependent sector correlations
