@@ -197,6 +197,7 @@ functions), `models/startup.py`, `models/venture_fund.py`, `venture_main.py`,
 ```
 capital_markets_game/
 ├── main.py              # terminal game loop
+├── venture_main.py      # terminal loop for venture fund mode
 ├── run_web.py           # web server entry point
 ├── config/              # tunable constants — start here to change the game
 │   ├── settings.py      # cash, fees, margin, slippage, difficulty
