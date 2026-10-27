@@ -11,6 +11,9 @@ calls, market impact, and options decay — all as readable Python you can step 
 Ten companies across five sectors. You start with $25,000. Beating the index is
 harder than it looks, and the code shows you exactly why.
 
+There is also a **[venture fund mode](#venture-fund-mode)**: run a $10M VC fund for
+ten years and find out why one deal has to return the whole fund.
+
 Plays in the terminal or the browser.
 
 ```
@@ -56,6 +59,14 @@ python main.py --list-saves    # show saves
 
 ```bash
 python run_web.py              # http://localhost:8000
+```
+
+**Venture fund mode:**
+
+```bash
+python main.py --venture             # terminal (or: python venture_main.py)
+python main.py --venture --seed 42   # same startups, same fates, every time
+python run_web.py                    # then open http://localhost:8000/venture
 ```
 
 ---
@@ -129,6 +140,58 @@ in both the terminal and the browser.
 
 ---
 
+## Venture fund mode
+
+You are the GP of a **$10M fund with a ten-year life**. Each turn is half a year.
+For the first five years, four fictional startups pitch every turn; you back the
+ones you like with a **cheque now and a reserve** held back for their later rounds.
+After year five the fund only follows on and waits for exits. At the end you get a
+letter to your LPs that names the deal (if any) that returned the fund.
+
+The point is to feel portfolio construction from the inside: most of your deals
+will fail, and the result is decided by the one or two that do not.
+
+### How to play
+
+| Terminal command | Browser | What it does |
+| --- | --- | --- |
+| `invest <#>` | **BACK IT** on a deal card | Cheque + reserve for a startup in this half-year's deal flow. Invest again to change it, 0 to withdraw. |
+| `follow <#>` | **FULL / SET / PASS** on an offer | Answer a portfolio company's new round: up to your pro-rata, or pass and get diluted. Unanswered offers are passed. |
+| `explain <topic>` | click any dotted label | A short explanation of the mechanic behind that number. |
+| `next` | **NEXT HALF-YEAR** | Close this half-year's rounds, charge fees, and play out the next. |
+
+Cheques are entered in thousands in the terminal (`300` = $300k). The minimum
+cheque is $100k, and cheques plus reserves in any one company are capped at 20% of
+the fund, as LP agreements usually require.
+
+### What is modelled
+
+| Mechanic | How it works here |
+| --- | --- |
+| Management fee | 2% of commitments a year for ten years: $2M of the $10M never reaches a startup. Called every half-year, which is what digs the J-curve. |
+| Carry | 20% of profit, after LPs get back everything they paid in, fees included (whole-fund waterfall, no hurdle). |
+| Power-law outcomes | Each startup is a shutdown (45% at seed), a soft landing below its entry price (20%), or a real exit at a Pareto-distributed multiple with α = 1.0. Later stages fail less and have thinner tails. |
+| Priced rounds and dilution | Every 18–24 months a company raises at a new price, issuing new shares. Your stake shrinks by pre-money ÷ post-money unless you follow on. Down rounds happen and mark you down. |
+| Pro-rata | Your ownership × the round size. Drawn from that company's reserve first, then from free capital. |
+| Liquidation preference | Every round is 1x non-participating preferred, pari passu. Each exit runs a waterfall shown series by series: in small sales preferred is paid first and founders get nothing. |
+| Reporting | NAV at last-round marks, net TVPI, net DPI, gross MOIC (before fees and carry), net IRR, and the J-curve of LPs' cumulative cash. |
+| End of fund | Companies still private at year ten are sold to a secondary buyer 30% below their mark. |
+
+Every startup's whole life is drawn the moment it pitches, from its own random
+stream (`systems/startup_outcomes.py`). Your choices never consume randomness, so a
+seed replays the same startups with the same fates whatever you back — replay a
+seed to see what the deal you passed on became.
+
+The visible team / market / traction stars are the startup's hidden quality plus
+noise. They help a little, and strong-looking deals cost more.
+
+Venture-mode code: `config/venture_settings.py` (every tunable number),
+`utils/venture_math.py` (dilution, pro-rata, waterfall, carry, IRR as pure
+functions), `models/startup.py`, `models/venture_fund.py`, `venture_main.py`,
+`ui/venture_display.py`, and `web/venture_*.py` plus `web/static/venture.*`.
+
+---
+
 ## Layout
 
 ```
@@ -174,7 +237,9 @@ a wrong number looks exactly like a right one. It covers short-position accounti
 options settlement at expiry, share-count validation, save-path safety, turn-loop
 termination, the bankruptcy ending, and each game's own random stream (a seed replays
 the same game in the terminal and the browser, and a save resumes the exact stream it
-was saved with).
+was saved with). For venture mode it covers the shape of the outcome distribution,
+dilution and pro-rata, the liquidation waterfall, fee and carry maths, and that a web
+fund restored from its seed and action log is identical to the one that was saved.
 
 Every test in it was checked by reverting the fix it guards and confirming the suite
 goes red. A test that passes both before and after a fix is not a test.
@@ -198,6 +263,11 @@ defeat the point.
   ones do.
 - **A margin call can drive cash negative.** The game continues as long as net worth
   stays above zero.
+- **Venture mode simplifies the term sheet.** All preferred is 1x non-participating
+  and pari passu (no seniority stacks, no participation), there is no carry hurdle or
+  fee step-down, every share that existed before the round you see is treated as
+  common, and there are no option-pool refreshes or SAFEs/notes. Startups you pass on
+  are not followed after they leave the deal flow.
 
 ---
 

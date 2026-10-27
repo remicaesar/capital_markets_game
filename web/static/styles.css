@@ -176,6 +176,13 @@ body {
     border-color: var(--color-accent);
 }
 
+/* Link to venture fund mode, styled like the start buttons */
+a.venture-mode-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    text-align: center;
+}
+
 /* Saves List */
 .saves-list {
     margin-top: 30px;

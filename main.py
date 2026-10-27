@@ -14,6 +14,7 @@ $ python main.py --load                # Load last autosave
 $ python main.py --load mysave         # Load specific save slot
 $ python main.py --list-saves          # List available saves
 $ python main.py --new                 # Force new game (ignore autosave)
+$ python main.py --venture             # Venture fund mode (see venture_main.py)
 """
 
 import random
@@ -56,6 +57,7 @@ Examples:
   python main.py --save-slot quick  Use 'quick' as save slot name
   python main.py --list-saves       Show all available saves
   python main.py --new              Force new game (ignore autosave)
+  python main.py --venture          Play venture fund mode instead
         """
     )
     parser.add_argument(
@@ -81,6 +83,10 @@ Examples:
     parser.add_argument(
         '--no-autosave', action='store_true',
         help='Disable automatic saving after each turn'
+    )
+    parser.add_argument(
+        '--venture', action='store_true',
+        help='Play venture fund mode: run a $10M VC fund for ten years'
     )
     return parser.parse_args()
 
@@ -117,6 +123,11 @@ _hint_rng = random.Random()
 def main():
     """Main game loop"""
     args = parse_args()
+
+    if args.venture:
+        import venture_main
+        venture_main.main([] if args.seed is None else ["--seed", str(args.seed)])
+        return
 
     # Handle --list-saves
     if args.list_saves:
