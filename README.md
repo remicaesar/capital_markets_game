@@ -64,8 +64,8 @@ python run_web.py              # http://localhost:8000
 **Venture fund mode:**
 
 ```bash
-python main.py --venture             # terminal (or: python venture_main.py)
-python main.py --venture --seed 42   # same startups, same fates, every time
+python venture_main.py               # terminal
+python venture_main.py --seed 42     # same startups, same fates, every time
 python run_web.py                    # then open http://localhost:8000/venture
 ```
 

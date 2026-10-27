@@ -159,7 +159,7 @@ def test_cli_venture_playthrough_reaches_the_letter_to_lps():
     """End to end: back one deal, then advance every half-year to the report."""
     stdin = "\n" + "invest 1\n300\n\n\n" + "next\n\n" * (MAX_PERIODS + 5)
     result = subprocess.run(
-        [sys.executable, "main.py", "--venture", "--seed", "4"],
+        [sys.executable, "venture_main.py", "--seed", "4"],
         input=stdin, capture_output=True, text=True, timeout=180, cwd=REPO,
     )
     out = result.stdout + result.stderr

@@ -7,7 +7,6 @@ Run a $10M venture fund for ten years, half a year per turn.
 Run:
 $ python venture_main.py
 $ python venture_main.py --seed 42     # Same startups, same fates, every time
-$ python main.py --venture             # Same thing, from the main entry point
 """
 
 import argparse
