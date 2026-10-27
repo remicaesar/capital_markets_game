@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" class="vc-page">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Venture Fund Mode - Capital Markets Game</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/venture.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4" crossorigin="anonymous"></script>
+</head>
+<body class="vc-page">
+    <!-- Start Screen -->
+    <div id="start-screen" class="start-screen">
+        <div class="start-content vc-start">
+            <h1>VENTURE FUND MODE</h1>
+            <p class="tagline">Run a $10M fund for ten years. Find the deal that returns it.</p>
+            <ul class="vc-intro">
+                <li>Each half-year a few fictional startups pitch. Back the ones you believe in with a cheque now and a <b>reserve</b> for later rounds.</li>
+                <li>When portfolio companies raise again, take your <b>pro-rata</b> or get diluted.</li>
+                <li>Outcomes follow a <b>power law</b>: most companies fail, a few return 50x or more.</li>
+                <li><b>Fees</b> (2% a year) and <b>carry</b> (20%) come out before your LPs see a dollar.</li>
+            </ul>
+            <div class="vc-seed-row">
+                <label for="seed-input">Seed (optional, replays the same startups)</label>
+                <input id="seed-input" type="number" min="0" placeholder="random">
+            </div>
+            <div class="start-buttons">
+                <button id="btn-open-fund" class="start-btn primary">OPEN THE FUND</button>
+                <a href="/" class="start-btn secondary vc-link-btn">STOCK MARKET GAME</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game Container -->
+    <div id="game-container" class="vc-container hidden">
+        <header class="header">
+            <div class="header-left">
+                <h1 class="title">VENTURE FUND</h1>
+                <button id="btn-help" class="help-btn" title="How it works">?</button>
+            </div>
+            <div class="header-center">
+                <span><span id="period-label">Y1 H1</span> &middot; turn <span id="period-num">1</span>/<span id="max-periods">20</span></span>
+                <div class="progress-bar">
+                    <div id="period-progress" class="progress-fill"></div>
+                </div>
+            </div>
+            <div class="header-right">
+                <span id="phase-badge" class="vc-phase investing">INVESTING</span>
+                <span id="seed-display" class="vc-dim"></span>
+            </div>
+        </header>
+
+        <main class="vc-main">
+            <!-- Fund panel -->
+            <section class="panel vc-fund-panel">
+                <h2 class="panel-title">FUND</h2>
+                <div class="vc-panel-body">
+                    <div class="vc-capital-bar" id="capital-bar"></div>
+                    <div class="vc-capital-legend" id="capital-legend"></div>
+                    <div class="vc-metrics" id="fund-metrics"></div>
+                </div>
+            </section>
+
+            <!-- J-curve -->
+            <section class="panel vc-chart-panel">
+                <h2 class="panel-title tooltip-trigger" data-mechanic="j_curve">J-CURVE &middot; LP NET CASH FLOW</h2>
+                <div class="vc-panel-body vc-chart-wrap">
+                    <canvas id="jcurve-chart"></canvas>
+                </div>
+            </section>
+
+            <!-- Deal flow -->
+            <section class="panel vc-deals-panel">
+                <h2 class="panel-title">DEAL FLOW &middot; THIS HALF-YEAR'S PITCHES</h2>
+                <div class="vc-panel-body">
+                    <div id="deal-cards" class="vc-deal-cards"></div>
+                </div>
+            </section>
+
+            <!-- Pro-rata offers -->
+            <section class="panel vc-followons-panel">
+                <h2 class="panel-title tooltip-trigger" data-mechanic="pro_rata">PRO-RATA OFFERS &middot; PORTFOLIO COMPANIES RAISING NOW</h2>
+                <div class="vc-panel-body" id="follow-ons"></div>
+            </section>
+
+            <!-- Portfolio -->
+            <section class="panel vc-portfolio-panel">
+                <h2 class="panel-title">PORTFOLIO</h2>
+                <div class="vc-panel-body table-container" id="portfolio"></div>
+            </section>
+
+            <!-- News + waterfall -->
+            <section class="panel vc-log-panel">
+                <h2 class="panel-title">WHAT HAPPENED</h2>
+                <div class="vc-panel-body">
+                    <div id="latest-waterfall"></div>
+                    <ul id="event-log" class="vc-log"></ul>
+                </div>
+            </section>
+        </main>
+
+        <footer class="vc-footer">
+            <div id="action-message" class="vc-message"></div>
+            <button id="btn-next" class="action-btn vc-next-btn">NEXT HALF-YEAR &rarr;</button>
+        </footer>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal hidden">
+        <div class="modal-content vc-help-content">
+            <h2>HOW A VENTURE FUND WORKS</h2>
+            <div id="mechanics-list" class="vc-mechanics"></div>
+            <button id="btn-help-close" class="modal-btn primary">GOT IT</button>
+        </div>
+    </div>
+
+    <!-- Mechanic Modal (one explanation) -->
+    <div id="mechanic-modal" class="modal hidden">
+        <div class="modal-content vc-mechanic-content">
+            <h2 id="mechanic-title"></h2>
+            <p id="mechanic-body"></p>
+            <button id="btn-mechanic-close" class="modal-btn primary">OK</button>
+        </div>
+    </div>
+
+    <!-- End of Fund Modal -->
+    <div id="report-modal" class="modal hidden">
+        <div class="modal-content vc-report-content">
+            <h2>END OF FUND &middot; LETTER TO LPs</h2>
+            <div id="report-body"></div>
+            <div class="modal-buttons">
+                <button id="btn-new-fund" class="modal-btn primary">NEW FUND</button>
+                <button id="btn-same-seed" class="modal-btn">REPLAY THIS SEED</button>
+                <button id="btn-report-close" class="modal-btn">VIEW PORTFOLIO</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/venture.js"></script>
+</body>
+</html>

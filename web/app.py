@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from web.routes import router as game_router
+from web.venture_routes import router as venture_router
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
 
     # Include API routes
     app.include_router(game_router)
+    app.include_router(venture_router)
 
     # Serve static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -43,6 +45,11 @@ def create_app() -> FastAPI:
     async def serve_index():
         """Serve the main HTML page"""
         return FileResponse(str(STATIC_DIR / "index.html"))
+
+    @app.get("/venture")
+    async def serve_venture():
+        """Serve the venture fund mode page"""
+        return FileResponse(str(STATIC_DIR / "venture.html"))
 
     @app.get("/health")
     async def health_check():

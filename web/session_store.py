@@ -114,3 +114,55 @@ class SessionStore:
     def session_count(self) -> int:
         with self._get_conn() as conn:
             return conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+
+
+class VentureSessionStore:
+    """
+    SQLite-backed storage for venture fund sessions.
+
+    A venture fund is fully determined by its seed and the player's actions, so
+    instead of serializing every startup and cap table, a session is stored as
+    (seed, action log) and rebuilt on restore by replaying the log.
+    """
+
+    def __init__(self, db_path: Path = DB_PATH):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS venture_sessions (
+                    game_id TEXT PRIMARY KEY,
+                    seed INTEGER NOT NULL,
+                    actions_json TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.commit()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        return sqlite3.connect(str(self.db_path))
+
+    def save_session(self, game_id: str, seed: int, actions: List[List[Any]]):
+        now = time.time()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO venture_sessions (game_id, seed, actions_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(game_id) DO UPDATE SET
+                    actions_json = excluded.actions_json,
+                    updated_at = excluded.updated_at
+            """, (game_id, seed, json.dumps(actions), now, now))
+            conn.commit()
+
+    def load_all_sessions(self) -> Dict[str, Dict[str, Any]]:
+        """Load all non-expired sessions, removing expired ones first"""
+        cutoff = time.time() - SESSION_TTL_SECONDS
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM venture_sessions WHERE updated_at < ?", (cutoff,))
+            rows = conn.execute(
+                "SELECT game_id, seed, actions_json FROM venture_sessions"
+            ).fetchall()
+            conn.commit()
+        return {game_id: {"seed": seed, "actions": json.loads(actions)}
+                for game_id, seed, actions in rows}
