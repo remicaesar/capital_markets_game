@@ -96,6 +96,31 @@ def test_commitments_outside_the_rules_are_refused(check, reserve, reason):
     assert fund.pending() == 0
 
 
+@pytest.mark.parametrize("check,reserve", [
+    (float("nan"), 0), (float("inf"), 0), (500_000, float("nan")), (500_000, float("inf")),
+    (0, float("nan")),
+])
+def test_non_finite_commitments_are_refused_and_leave_capital_unchanged(check, reserve):
+    startup = crafted_startup([seed_round(), ScheduledEvent(9, "shutdown")])
+    fund = fund_offering(startup)
+    ok, message = fund.commit_to_deal(startup.id, check, reserve)
+    assert not ok and "finite" in message
+    assert fund.pending() == 0
+    assert fund.available() == pytest.approx(INVESTABLE_CAPITAL)
+
+
+@pytest.mark.parametrize("amount", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_follow_ons_are_refused_and_leave_capital_unchanged(amount):
+    fund, pos = _seed_backed()
+    advance_to(fund, 4)
+    before = fund.available()
+    ok, _ = fund.decide_follow_on(pos.startup.id, amount)
+    assert not ok
+    assert pos.follow_on is None
+    assert fund.available() == pytest.approx(before)
+    assert fund.reserved() == pytest.approx(500_000)
+
+
 def test_reserves_can_block_new_deals():
     deals = [crafted_startup([seed_round(), ScheduledEvent(9, "shutdown")], startup_id=i,
                              name=f"Co{i}") for i in range(5)]

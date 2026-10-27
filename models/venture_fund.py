@@ -8,6 +8,7 @@ the clock, and lets whatever the portfolio's futures hold for the new period
 happen: new rounds, exits, shutdowns.
 """
 
+import math
 import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -220,6 +221,8 @@ class VentureFund:
         deal = next((d for d in self.deal_flow if d.id == deal_id), None)
         if deal is None:
             return False, "That startup is not in this period's deal flow"
+        if not (math.isfinite(check) and math.isfinite(reserve)):
+            return False, "Cheque and reserve must be finite amounts"
 
         if check == 0:
             if self.commitments.pop(deal_id, None) is None:
@@ -254,7 +257,7 @@ class VentureFund:
         if pos is None or not pos.active or pos.startup.open_round is None:
             return False, "That company is not raising right now"
         pro_rata = pos.pro_rata()
-        if amount < 0 or amount > pro_rata + CENT:
+        if not math.isfinite(amount) or amount < 0 or amount > pro_rata + CENT:
             return False, f"Follow-on must be between $0 and your pro-rata of ${pro_rata:,.0f}"
         amount = min(amount, pro_rata)
 

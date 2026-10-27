@@ -10,6 +10,7 @@ $ python venture_main.py --seed 42     # Same startups, same fates, every time
 """
 
 import argparse
+import math
 from typing import Optional
 
 from rich.console import Console
@@ -51,8 +52,8 @@ def ask_amount(prompt: str, default: Optional[float] = None) -> Optional[float]:
         except ValueError:
             console.print("[red]Enter an amount in $ thousands, e.g. 250 for $250k[/red]")
             continue
-        if value < 0:
-            console.print("[red]Amount cannot be negative[/red]")
+        if not math.isfinite(value) or value < 0:
+            console.print("[red]Amount must be a non-negative number[/red]")
             continue
         return value
 
