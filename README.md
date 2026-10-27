@@ -221,7 +221,7 @@ capital_markets_game/
 └── legacy/              # the original single-file prototype, kept for reference
 ```
 
-Two entry points share one simulation core. Nothing in `models/` or `systems/` knows
+The terminal and browser entry points share one simulation core. Nothing in `models/` or `systems/` knows
 whether it is being played in a terminal or a browser.
 
 ---
